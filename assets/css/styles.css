@@ -10,6 +10,8 @@
   --nav-height-desktop: 68px;
   --bg-app: #f2f6fb;
   --bg-panel: #ffffff;
+  --bg-panel-glass: rgba(255, 255, 255, 0.62);
+  --bg-panel-glass-strong: rgba(255, 255, 255, 0.72);
   --text-main: #1d2833;
   --text-muted: #4e6273;
   --line-soft: #d4dfeb;
@@ -43,7 +45,7 @@ body::before {
   background:
     radial-gradient(
       900px 520px at 6% -12%,
-      rgba(47, 94, 168, 0.2) 0%,
+      rgba(13, 106, 255, 0.2) 0%,
       rgba(47, 94, 168, 0.12) 42%,
       rgba(47, 94, 168, 0) 78%
     ),
@@ -68,6 +70,15 @@ body::before {
 body > * {
   position: relative;
   z-index: 1;
+}
+
+.research-bg-canvas {
+  position: fixed !important;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0 !important;
 }
 
 .navbar {
@@ -115,19 +126,44 @@ body > * {
   font-weight: 600;
 }
 
+/* Global link style */
+a:not(.btn),
+a:not(.btn):visited,
+a:not(.btn):active {
+  color: var(--accent-green);
+  text-decoration: none !important;
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+a:not(.btn):hover,
+a:not(.btn):focus-visible {
+  color: #267a62;
+  text-decoration: none !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(47, 143, 115, 0.2);
+  background-color: rgba(231, 246, 241, 0.65);
+  border-radius: 0.45rem;
+}
+
 .hero-panel {
   background:
-    linear-gradient(130deg, #ffffff 0%, #f6fbff 48%, #f2fbf7 100%);
-  border: 1px solid #d1dfec;
+    linear-gradient(130deg, rgba(255, 255, 255, 0.72) 0%, rgba(246, 251, 255, 0.62) 48%, rgba(242, 251, 247, 0.62) 100%);
+  border: 1px solid rgba(209, 223, 236, 0.85);
   border-radius: 0.85rem;
   box-shadow: 0 10px 28px rgba(31, 111, 139, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 .page-card {
-  background-color: var(--bg-panel);
-  border: 1px solid var(--line-soft) !important;
+  background-color: var(--bg-panel-glass);
+  border: 1px solid rgba(212, 223, 235, 0.85) !important;
   border-top: 3px solid transparent !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  backdrop-filter: blur(8px);
 }
 
 .page-card:hover {
@@ -151,12 +187,39 @@ body > * {
   border-top-color: var(--accent) !important;
 }
 
+.home-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.home-card-cell {
+  min-width: 0;
+}
+
+.home-card-grid > .home-card-cell:nth-child(1) .page-card {
+  border-top-color: var(--accent-blue) !important;
+}
+
+.home-card-grid > .home-card-cell:nth-child(2) .page-card {
+  border-top-color: var(--accent-green) !important;
+}
+
+.home-card-grid > .home-card-cell:nth-child(3) .page-card {
+  border-top-color: var(--accent-amber) !important;
+}
+
+.home-card-grid > .home-card-cell:nth-child(4) .page-card {
+  border-top-color: var(--accent) !important;
+}
+
 .content-frame {
-  background: var(--bg-panel);
-  border: 1px solid var(--line-soft);
+  background: var(--bg-panel-glass-strong);
+  border: 1px solid rgba(212, 223, 235, 0.9);
   border-radius: 0.85rem;
   padding: 1.25rem;
   box-shadow: 0 6px 18px rgba(26, 50, 77, 0.05);
+  backdrop-filter: blur(8px);
 }
 
 .sidebar-fixed {
@@ -165,8 +228,9 @@ body > * {
   bottom: 0;
   width: 25%;
   overflow-y: auto;
-  background: linear-gradient(180deg, #f9fcff 0%, #ffffff 22%, #ffffff 100%);
+  background: linear-gradient(180deg, rgba(249, 252, 255, 0.68) 0%, rgba(255, 255, 255, 0.62) 22%, rgba(255, 255, 255, 0.6) 100%);
   border-right-color: #d4deea !important;
+  backdrop-filter: blur(10px);
 }
 
 .main-with-sidebar {
@@ -193,6 +257,15 @@ body > * {
   border-left-color: var(--accent);
 }
 
+.method-toggle {
+  min-width: 1.8rem;
+  line-height: 1.1;
+}
+
+.method-toggle[aria-expanded="false"] {
+  transform: rotate(-90deg);
+}
+
 .markdown-host {
   min-height: 300px;
 }
@@ -217,12 +290,20 @@ body > * {
   border-radius: 0.25rem;
 }
 
+.markdown-host img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.9rem auto;
+  border-radius: 0.5rem;
+}
+
 .markdown-host table {
   width: 100%;
   border-collapse: collapse;
   border: 1px solid #b8c9dd;
   margin: 1rem 0;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .markdown-host thead th {
@@ -306,21 +387,23 @@ body > * {
 }
 
 .result-box {
-  background: linear-gradient(150deg, #f7fbff 0%, #f4faf8 100%);
+  background: linear-gradient(150deg, rgba(247, 251, 255, 0.68) 0%, rgba(244, 250, 248, 0.62) 100%);
   border: 1px dashed #b8cbdf;
   border-left: 4px solid var(--accent-green);
   border-radius: 0.6rem;
   padding: 1rem;
   min-height: 120px;
   white-space: pre-wrap;
+  backdrop-filter: blur(8px);
 }
 
 .code-block {
-  background: linear-gradient(180deg, #f8fbff 0%, #f5f9fd 100%);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.7) 0%, rgba(245, 249, 253, 0.64) 100%);
   border: 1px solid var(--line-soft);
   border-radius: 0.65rem;
   padding: 1rem;
   font-size: 0.9rem;
+  backdrop-filter: blur(8px);
 }
 
 /* Home page 3-4-3 layout: left blank 3, content 4, right blank 3 */
@@ -353,6 +436,38 @@ body > * {
   background-color: var(--accent-blue-soft);
   color: #1f3f72;
   border-color: #7d9fcc;
+}
+
+/* 1-2-6-1 layout for experiments / literature / data-analysis pages */
+.layout-1261-shell {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+@media (min-width: 992px) {
+  .layout-1261-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 2fr) minmax(0, 6fr) minmax(0, 1fr);
+    column-gap: 1rem;
+    align-items: start;
+  }
+
+  .layout-1261-grid > .sidebar-fixed {
+    grid-column: 2;
+    position: sticky;
+    top: calc(var(--nav-height-desktop) + 0.8rem);
+    width: auto;
+    height: calc(100vh - var(--nav-height-desktop) - 1rem);
+    overflow-y: auto;
+    margin-left: 0.25rem;
+    border-radius: 0.65rem;
+  }
+
+  .layout-1261-grid > .main-with-sidebar {
+    grid-column: 3;
+    margin-left: 0;
+    min-width: 0;
+  }
 }
 
 @media (min-width: 992px) {
@@ -394,10 +509,38 @@ body > * {
   .main-with-sidebar {
     margin-left: 0;
   }
+
+  .home-card-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 991.98px) {
+  .layout-1261-grid {
+    display: block;
+  }
+
+  .layout-1261-grid > .sidebar-fixed {
+    position: static;
+    width: 100%;
+    height: auto;
+    top: auto;
+    bottom: auto;
+    margin-left: 0;
+    border-radius: 0;
+  }
+
+  .layout-1261-grid > .main-with-sidebar {
+    margin-left: 0;
+  }
+
   .home-main-343 {
     display: block;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .home-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

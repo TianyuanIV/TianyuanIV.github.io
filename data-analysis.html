@@ -1,19 +1,16 @@
 <!--
-Project file structure (example):
-/
-|-- data-analysis.html
-|-- assets/js/site.js
-`-- analysis/
-    |-- script-library.md
-    |-- upload-run.md
-    `-- results-guide.md
+Data analysis page structure:
+/data-analysis.html
+/assets/js/data-analysis-page.js
+/scripts/通路对比.md
+/scripts/相关性热图.md
 -->
 <!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>羊角必须死 | 数据分析</title>
+    <title>🧬羊角必须死 | 数据分析</title>
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
       rel="stylesheet"
@@ -21,9 +18,9 @@ Project file structure (example):
       crossorigin="anonymous"
     />
     <link rel="stylesheet" href="assets/css/styles.css" />
-    <link rel="icon" href="./assets/icon/icon.svg" type="image/svg+xml">
+    <link rel="icon" href="./assets/icon/icon.svg" type="image/svg+xml" />
   </head>
-  <body class="layout-1261-page" data-default-doc="analysis/script-library.md" data-doc-root="analysis/">
+  <body class="layout-1261-page">
     <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top">
       <div class="container-fluid px-lg-4">
         <a class="navbar-brand fw-semibold" href="index.html">🧬羊角必须死</a>
@@ -54,31 +51,13 @@ Project file structure (example):
       <div class="layout-1261-grid">
         <aside class="sidebar-fixed border-end bg-white">
           <div class="p-3">
-            <h2 class="h6 text-uppercase text-muted mb-3">分析模块</h2>
+            <h2 class="h6 text-uppercase text-muted mb-3">分析导航</h2>
             <ul class="nav flex-column sidebar-tree">
               <li class="nav-item">
-                <a
-                  class="nav-link sidebar-link"
-                  href="?doc=analysis/script-library.md"
-                  data-md="analysis/script-library.md"
-                  >脚本库</a
-                >
+                <a class="nav-link sidebar-link" href="#viz-workbench">图像绘制</a>
               </li>
               <li class="nav-item">
-                <a
-                  class="nav-link sidebar-link"
-                  href="?doc=analysis/upload-run.md"
-                  data-md="analysis/upload-run.md"
-                  >上传与运行</a
-                >
-              </li>
-              <li class="nav-item">
-                <a
-                  class="nav-link sidebar-link"
-                  href="?doc=analysis/results-guide.md"
-                  data-md="analysis/results-guide.md"
-                  >分析结果</a
-                >
+                <a class="nav-link sidebar-link" href="#scripts-models">脚本与模型</a>
               </li>
             </ul>
           </div>
@@ -86,31 +65,68 @@ Project file structure (example):
 
         <main class="px-md-4 main-with-sidebar">
           <div class="py-4">
-            <h1 class="h3 mb-4">数据分析</h1>
+            <h1 class="h3 mb-4">数据分析工作台</h1>
 
-            <section class="content-frame mb-4">
-              <h2 class="h5 mb-3">上传数据集</h2>
-              <div class="row g-3 align-items-end">
-                <div class="col-md-8">
-                  <label for="dataFileInput" class="form-label">选择 CSV 或 TXT 文件</label>
-                  <input class="form-control" id="dataFileInput" type="file" accept=".csv,.txt" />
+            <section id="viz-workbench" class="mb-4">
+              <section class="content-frame mb-4">
+                <h2 class="h5 mb-3">1. 上传数据文件（xlsx）并预览</h2>
+                <div class="row g-3 align-items-end">
+                  <div class="col-lg-8">
+                    <label for="workbookInput" class="form-label">选择 Excel 文件（.xlsx / .xls）</label>
+                    <input class="form-control" id="workbookInput" type="file" accept=".xlsx,.xls" />
+                  </div>
+                  <div class="col-lg-4">
+                    <div id="workbookStatus" class="small text-muted">尚未加载文件</div>
+                  </div>
                 </div>
-                <div class="col-md-4">
-                  <button id="runAnalysisBtn" class="btn btn-primary w-100" type="button">运行快速分析</button>
+
+                <hr />
+
+                <div id="sheetTabList" class="d-flex flex-wrap gap-2 mb-3"></div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-0" id="sheetPreviewTable">
+                    <thead></thead>
+                    <tbody></tbody>
+                  </table>
                 </div>
-              </div>
+              </section>
+
+              <section class="content-frame mb-4">
+                <h2 class="h5 mb-3">2. 选择绘图内容</h2>
+                <div class="row g-3">
+                  <div class="col-lg-5">
+                    <label for="plotScriptSelect" class="form-label">绘图脚本</label>
+                    <select id="plotScriptSelect" class="form-select"></select>
+                  </div>
+                </div>
+
+                <div id="scriptParamRow" class="row g-3 mt-1"></div>
+
+                <div class="mt-3">
+                  <button id="generatePlotBtn" class="btn btn-primary" type="button">生成图像</button>
+                </div>
+
+                <hr />
+
+                <h3 class="h6 mb-2">脚本说明（Markdown）</h3>
+                <div id="scriptDoc" class="markdown-host"></div>
+              </section>
+
+              <section class="content-frame">
+                <h2 class="h5 mb-3">3. 输出结果图像</h2>
+                <div id="plotResult" style="min-height: 460px"></div>
+                <div class="mt-3 d-flex gap-2">
+                  <button id="downloadPlotBtn" class="btn btn-outline-primary" type="button" disabled>
+                    下载图像（PNG）
+                  </button>
+                  <span id="plotStatus" class="small text-muted align-self-center">尚未生成图像</span>
+                </div>
+              </section>
             </section>
 
-            <section class="content-frame mb-4">
-              <h2 class="h5 mb-3">分析结果</h2>
-              <div id="analysisResult" class="result-box text-muted">
-                暂无数据。请先上传文件并点击“运行快速分析”。
-              </div>
-            </section>
-
-            <section class="content-frame">
-              <h2 class="h5 mb-3">模块文档</h2>
-              <div id="content" class="markdown-host"></div>
+            <section id="scripts-models" class="content-frame">
+              <h2 class="h5 mb-3">脚本与模型</h2>
+              <p class="text-muted mb-0">暂未添加内容。</p>
             </section>
           </div>
         </main>
@@ -123,19 +139,9 @@ Project file structure (example):
       crossorigin="anonymous"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script>
-      window.MathJax = {
-        tex: {
-          inlineMath: [["$", "$"], ["\\(", "\\)"]],
-          displayMath: [["$$", "$$"], ["\\[", "\\]"]]
-        },
-        options: {
-          skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"]
-        }
-      };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <script src="assets/js/site.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="assets/js/data-analysis-page.js"></script>
     <script src="assets/js/background.js"></script>
   </body>
 </html>

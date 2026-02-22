@@ -19,6 +19,7 @@
 
   const summaryLabels = new Set(["total", "sum", "总计", "总和", "合计"]);
   let mathJaxLoader = null;
+  let mermaidLoader = null;
 
   const scriptRegistry = [
     {
@@ -338,6 +339,109 @@
     } catch (_) {}
   }
 
+  function extractMermaidBlocks(container) {
+    if (!container) return [];
+    const blocks = container.querySelectorAll(
+      "pre > code.language-mermaid, pre > code.lang-mermaid, pre > code[data-lang='mermaid']"
+    );
+    const converted = [];
+    blocks.forEach((code) => {
+      const pre = code.parentElement;
+      if (!pre) return;
+      const host = document.createElement("div");
+      host.className = "mermaid";
+      host.textContent = code.textContent || "";
+      pre.replaceWith(host);
+      converted.push(host);
+    });
+    return converted;
+  }
+
+  function ensureMermaidLoaded() {
+    if (window.mermaid && typeof window.mermaid.run === "function") {
+      return Promise.resolve(window.mermaid);
+    }
+    if (mermaidLoader) return mermaidLoader;
+
+    mermaidLoader = new Promise((resolve) => {
+      const existing = document.querySelector('script[data-role="mermaid-lib"]');
+      if (existing) {
+        let attempts = 0;
+        const timer = window.setInterval(() => {
+          attempts += 1;
+          if (window.mermaid && typeof window.mermaid.run === "function") {
+            window.clearInterval(timer);
+            resolve(window.mermaid);
+            return;
+          }
+          if (attempts >= 40) {
+            window.clearInterval(timer);
+            resolve(null);
+          }
+        }, 100);
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+      script.async = true;
+      script.dataset.role = "mermaid-lib";
+      script.addEventListener("load", function () {
+        if (window.mermaid && typeof window.mermaid.initialize === "function") {
+          window.mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: "loose",
+            theme: "base",
+            themeVariables: {
+              background: "#ffffff",
+              primaryColor: "#e8f3f7",
+              primaryTextColor: "#1d2833",
+              primaryBorderColor: "#1f6f8b",
+              secondaryColor: "#e8eef9",
+              secondaryTextColor: "#1d2833",
+              secondaryBorderColor: "#2f5ea8",
+              tertiaryColor: "#e7f6f1",
+              tertiaryTextColor: "#1d2833",
+              tertiaryBorderColor: "#2f8f73",
+              lineColor: "#4e6273",
+              defaultLinkColor: "#4e6273",
+              edgeLabelBackground: "#ffffff",
+              clusterBkg: "#f8fbff",
+              clusterBorder: "#c5882a",
+              nodeBorder: "#1f6f8b",
+              mainBkg: "#ffffff",
+              fontFamily: "HarmonyOS Sans Black, sans-serif"
+            }
+          });
+        }
+        resolve(window.mermaid || null);
+      });
+      script.addEventListener("error", function () {
+        resolve(null);
+      });
+      document.head.appendChild(script);
+    });
+
+    return mermaidLoader;
+  }
+
+  async function renderMermaidIn(element) {
+    if (!element) return;
+    const converted = extractMermaidBlocks(element);
+    const hosts = converted.length > 0 ? converted : Array.from(element.querySelectorAll(".mermaid"));
+    if (hosts.length === 0) return;
+
+    const mermaid = await ensureMermaidLoaded();
+    if (!mermaid || typeof mermaid.run !== "function") return;
+
+    hosts.forEach((node) => node.removeAttribute("data-processed"));
+    try {
+      await mermaid.run({ nodes: hosts });
+    } catch (_) {
+      // Keep page usable if mermaid parse fails.
+    }
+  }
+
   async function loadScriptDoc(scriptDef) {
     const docPath = normalizeMdPath("scripts/" + scriptDef.docName + ".md");
     if (!docPath) {
@@ -352,6 +456,7 @@
       const transformed = transformAdmonitions(md);
       const html = window.marked ? window.marked.parse(transformed) : escapeHtml(transformed);
       scriptDoc.innerHTML = rewriteAssetUrlsByDocPath(html, docPath);
+      await renderMermaidIn(scriptDoc);
       await renderMathIn(scriptDoc);
     } catch (_) {
       scriptDoc.innerHTML = '<p class="text-muted mb-0">未找到脚本说明文件：<code>' + escapeHtml(docPath) + "</code></p>";

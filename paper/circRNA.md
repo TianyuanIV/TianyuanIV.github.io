@@ -7,6 +7,11 @@
 
 基于在人类间充质干细胞（hMSCs）成骨分化领域的综述，现有证据最集中支持：circRNA在成骨分化中主要通过竞争性内源RNA（ceRNA）框架发挥作用——“吸附/海绵化”特定miRNA，解除miRNA对下游靶基因的抑制，从而改变Wnt/β-catenin、BMP/TGF-β-Smad、PTEN/AKT、NOTCH、VEGF等通路节点与成骨主调控因子（尤其RUNX2）的表达，最终影响成骨表型与骨病进展（骨质疏松、股骨头坏死等）。
 
+> ceRNA框架
+竞争性RNA框架是指所有RNA之间通过miRNA进行简介交流的理论框架
+所有的RNA都通过MREs(miRNA response elements)与miRNA作用简介调控某RNA的表达情况，而circRNA功能之一就是作为miRNA sponge解决这个问题。
+
+
 需要强调两点“方法学与因果推断”风险：其一，circRNA鉴定高度依赖回剪接位点（BSJ）读段与RT-PCR验证，算法与实验偏差可造成假阳性/假阴性；其二，miRNA“海绵效应”对分子计量关系要求苛刻，生理条件下并非总能满足，因此应在鲁棒实验设计与多手段验证框架下解读“circRNA—miRNA—mRNA”轴。
 
 ---
@@ -27,7 +32,7 @@ circRNA通常在细胞核内产生：单个基因位点的pre-mRNA在剪接体�
 主流分类将circRNA分为三大类：  
 - **ecircRNA**：主要由外显子组成，常见于细胞质，功能研究最集中；  
 - **ciRNA**：来源于内含子，可在细胞核富集并参与转录层面调控；  
-- **EIciRNA**：同时包含外显子与保留内含子片段，往往更偏核内定位，可通过与U1 snRNP等形成复合体而影响亲本基因转录。
+- **EIciRNA**：同时包含外显子与保留内含子片段，往往更偏核内定位，可通过与U1 snRNP等形成剪切复合体而影响亲本基因转录。
 
 ### 功能谱系：从ceRNA到蛋白翻译
 
@@ -155,19 +160,20 @@ circRNA通常在细胞核内产生：单个基因位点的pre-mRNA在剪接体�
 !!! Figure 2：成骨分化主干通路——“RUNX2作为汇聚点的地图”
     图2把三条主轴并列：Wnt、BMP与TGF-β。阅读顺序建议从膜到核：
     ![](./src/circRNA-1-2.jpg)
-    - **Wnt/β-catenin**：膜上Wnt信号输入后，β-catenin积累并入核，与转录复合体共同驱动靶基因表达（图中明确标出RUNX2作为靶基因之一）。  
-    - **BMP/TGF-β（Smad依赖）**：受体激活后分别驱动Smad1/5/8或Smad2/3磷酸化，与Smad4组合入核；图中把RUNX2与OSX等成骨转录程序放在下游。  
-    - **Smad非依赖支路（MAPK等）**：图中通过TAK1-TAB复合体、ERK/p38等模块向下游转导，强调环境信号可通过非Smad路径影响RUNX2/OSX等磷酸化与活性。  
+    - **Wnt/β-catenin**：Wnt/β-catenin 信号通路通过β-catenin 转位至细胞核，进而诱导靶基因（包括 RUNX2）的表达，从而促进 MSCs 的成骨分化。  
+    - **BMP/TGF-β（Smad依赖）**：TGF-β和 BMP 通过与其各自受体结合，激活 Smad 依赖性和非依赖性信号通路。在 TGF-β的 Smad 依赖性信号通路中，Smad2/3 在配体-受体结合后被磷酸化，并与 Smad4 相互作用，进而迁移至细胞核。在细胞核内，该复合物与 CBP 和 P300 共激活因子相互作用，诱导 RUNX2 的表达。 Smad2/3 在不与 Smad4 相互作用的情况下，与 HDAC4/5 形成复合物，从而抑制 RUNX2 的表达。未磷酸化的 Smad2/3 会被泛素化降解。<BR>
+    在 BMP Smad 依赖性通路中，I 型和 II 型 BMP 受体（BMPR-I 和 BMPR-II）被其配体激活，导致 Smad1/5/8 磷酸化。这些分子与 Smad4 形成复合物并进入细胞核，作为靶基因（包括 RUNX2 和 Osterix (OSX)）的转录调控因子。未磷酸化的 Smad1/5/8 也会被泛素化降解。该 Smad 依赖性级联反应还包括 Smad6/7 和 Smurf1/2，它们是该通路的负调控因子。
+    - **Smad非依赖支路（MAPK等）**：在不依赖于 Smad 的级联反应中，TGF-β/BMP 信号通路通过包含 TAK1-TAB 复合物、ERK 和 p38 的级联反应诱导 DLX5、RUNX2 和 OSX 磷酸化，从而促进成骨细胞的成熟和增殖。
 
     同时，图2明确展示负调控组件（例如Smad6/7、Smurf等）以及“促/抑”并存的调控逻辑：这为理解后续图3/图4中“同为海绵miRNA，但最终可能促成骨或抑成骨”提供基础（关键在于其解除抑制的靶基因是通路的正调点还是负调点）。
 
 !!! Figure 3：Wnt与BMP模块的circRNA网络——“同一表型的多入口调控”
-
     图3分A、B两部分。其共同构图语言为：外围是circRNA与miRNA的抑制关系（红色“T”符号），内圈标出被miRNA调控的关键基因节点，绿色箭头汇入中心“OSTEOGENESIS”。
     ![](./src/circRNA-1-3.png)
-    - **A（Wnt/β-catenin）**把GSK-3β、Dkk-1、CTNNB1、YAP1、WNT5B等作为节点，说明不同circRNA通过不同miRNA“入口”调到同一条Wnt主轴，从而改变成骨。典型例子是circPVT1—miR-30d-5p—ITGB3与circ_0067680—miR-4429—CTNNB1。
+    
+    - A（Wnt/β-catenin） 把GSK-3β、Dkk-1、CTNNB1、YAP1、WNT5B等作为节点，说明不同circRNA通过不同miRNA“入口”调到同一条Wnt主轴，从而改变成骨。典型例子是circPVT1—miR-30d-5p—ITGB3与circ_0067680—miR-4429—CTNNB1。
     ![](./src/circRNA-1-4.png)  
-    - **B（BMP）**以BMP2、SMAD5/6、RUNX1/3、SATB2、GDF5、Chordin等为节点，揭示促进或抑制BMP信号的不同“杠杆点”。比如hsa_circ_0016624、circ_0000020、circRNA_0048211均指向“解除miRNA对BMP2的抑制”。  
+    - B（BMP）以BMP2、SMAD5/6、RUNX1/3、SATB2、GDF5、Chordin等为节点，揭示促进或抑制BMP信号的不同“杠杆点”。比如hsa_circ_0016624、circ_0000020、circRNA_0048211均指向“解除miRNA对BMP2的抑制”。  
 
     该图的生物学含义是：成骨分化不是单一路径“开/关”，而更像一个由多条ceRNA轴密集覆盖的调控网络；同一细胞类型（如BMSC）可同时存在多个circRNA轴，理论上具备协同或拮抗的可能（这也是后续实验需要解决的网络层面问题）。
 
@@ -188,7 +194,7 @@ circRNA之所以能在成骨分化中形成高密度调控网络，根源在其*
 
 ---
 
-## 关键参考文献
+## 参考文献
 
 -  et al. (2024). *Regulatory mechanisms of circular RNAs during human mesenchymal stem cell osteogenic differentiation*. doi:10.7150/thno.89066.  
 -  & Salzman J. (2016). *Detecting circular RNAs: bioinformatic and experimental challenges*. PMID:27739534.  

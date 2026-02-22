@@ -298,6 +298,18 @@ a:not(.btn):focus-visible {
   border-radius: 0.5rem;
 }
 
+.markdown-host .mermaid {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.markdown-host .mermaid svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
 .markdown-host table {
   width: 100%;
   border-collapse: collapse;

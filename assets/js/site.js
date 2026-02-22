@@ -3,6 +3,7 @@
   const docLinks = Array.from(document.querySelectorAll("[data-md]"));
   const defaultDoc = document.body.dataset.defaultDoc || "";
   const docRoot = document.body.dataset.docRoot || "";
+  let mermaidLoader = null;
 
   function getDocFromLocation() {
     const params = new URLSearchParams(window.location.search);
@@ -55,6 +56,111 @@
       await window.MathJax.typesetPromise([contentEl]);
     } catch (_) {
       // Keep page usable even if math rendering fails.
+    }
+  }
+
+  function extractMermaidBlocks(container) {
+    if (!container) return [];
+    const blocks = container.querySelectorAll(
+      "pre > code.language-mermaid, pre > code.lang-mermaid, pre > code[data-lang='mermaid']"
+    );
+    const converted = [];
+    for (const code of blocks) {
+      const pre = code.parentElement;
+      if (!pre) continue;
+      const host = document.createElement("div");
+      host.className = "mermaid";
+      host.textContent = code.textContent || "";
+      pre.replaceWith(host);
+      converted.push(host);
+    }
+    return converted;
+  }
+
+  function ensureMermaidLoaded() {
+    if (window.mermaid && typeof window.mermaid.run === "function") {
+      return Promise.resolve(window.mermaid);
+    }
+    if (mermaidLoader) return mermaidLoader;
+
+    mermaidLoader = new Promise((resolve) => {
+      const existing = document.querySelector('script[data-role="mermaid-lib"]');
+      if (existing) {
+        let attempts = 0;
+        const timer = window.setInterval(() => {
+          attempts += 1;
+          if (window.mermaid && typeof window.mermaid.run === "function") {
+            window.clearInterval(timer);
+            resolve(window.mermaid);
+            return;
+          }
+          if (attempts >= 40) {
+            window.clearInterval(timer);
+            resolve(null);
+          }
+        }, 100);
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+      script.async = true;
+      script.dataset.role = "mermaid-lib";
+      script.addEventListener("load", function () {
+        if (window.mermaid && typeof window.mermaid.initialize === "function") {
+          window.mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: "loose",
+            theme: "base",
+            themeVariables: {
+              background: "#ffffff",
+              primaryColor: "#e8f3f7",
+              primaryTextColor: "#1d2833",
+              primaryBorderColor: "#1f6f8b",
+              secondaryColor: "#e8eef9",
+              secondaryTextColor: "#1d2833",
+              secondaryBorderColor: "#2f5ea8",
+              tertiaryColor: "#e7f6f1",
+              tertiaryTextColor: "#1d2833",
+              tertiaryBorderColor: "#2f8f73",
+              lineColor: "#4e6273",
+              defaultLinkColor: "#4e6273",
+              edgeLabelBackground: "#ffffff",
+              clusterBkg: "#f8fbff",
+              clusterBorder: "#c5882a",
+              nodeBorder: "#1f6f8b",
+              mainBkg: "#ffffff",
+              fontFamily: "HarmonyOS Sans Black, sans-serif"
+            }
+          });
+        }
+        resolve(window.mermaid || null);
+      });
+      script.addEventListener("error", function () {
+        resolve(null);
+      });
+      document.head.appendChild(script);
+    });
+
+    return mermaidLoader;
+  }
+
+  async function renderMermaidInContent() {
+    if (!contentEl) return;
+    const converted = extractMermaidBlocks(contentEl);
+    const hosts = converted.length > 0 ? converted : Array.from(contentEl.querySelectorAll(".mermaid"));
+    if (hosts.length === 0) return;
+
+    const mermaid = await ensureMermaidLoaded();
+    if (!mermaid || typeof mermaid.run !== "function") return;
+
+    for (const node of hosts) {
+      node.removeAttribute("data-processed");
+    }
+    try {
+      await mermaid.run({ nodes: hosts });
+    } catch (_) {
+      // Keep page usable even if mermaid rendering fails.
     }
   }
 
@@ -212,6 +318,7 @@
       setContentHtml(finalHtml);
       setActiveLink(docPath);
       syncMethodLogCollapseByActiveLink(docPath);
+      await renderMermaidInContent();
       await renderMathInContent();
     } catch (error) {
       setContentHtml('<p class="text-danger mb-0">加载失败: ' + error.message + "</p>");

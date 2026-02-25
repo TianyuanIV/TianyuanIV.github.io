@@ -1,6 +1,6 @@
 # circRNA_1809 通过 miR-370-3p/Kitlg 轴促进骨髓间充质干细胞成骨分化的实验研究解析
-
-## 执行摘要
+[CircRNA_1809 promotes the osteogenic differentiation of bone marrow mesenchymal stem cells through miR-370-3p](https://www.nature.com/articles/s41598-025-03711-3)
+## 摘要
 研究在大鼠骨髓间充质干细胞体外成骨诱导模型中发现：circRNA_1809随分化上调、miR-370-3p随分化下调；敲低circRNA_1809会降低Kitlg并抑制矿化，同时下调ALP/RUNX2；miR-370-3p过表达抑制成骨且可加重si-circRNA_1809表型；双荧光素酶支持circRNA_1809与miR-370-3p结合。整体证据链指向“circRNA_1809（海绵）→抑制miR-370-3p活性→上调Kitlg→促进成骨”，作者进一步推测可能牵涉PI3K/Akt通路。
 
 ## 背景与主要工作

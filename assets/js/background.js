@@ -26,6 +26,40 @@
     return "rgba(" + c.r + "," + c.g + "," + c.b + "," + alpha + ")";
   }
 
+  function wrap(value, min, max) {
+    const range = max - min;
+    if (range <= 0) return min;
+    return ((((value - min) % range) + range) % range) + min;
+  }
+
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function () {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function getOrCreatePersistentNumber(key, createValue) {
+    try {
+      const old = window.localStorage.getItem(key);
+      if (old != null && old !== "") {
+        const n = Number(old);
+        if (Number.isFinite(n)) return n;
+      }
+      const next = Number(createValue());
+      if (Number.isFinite(next)) {
+        window.localStorage.setItem(key, String(next));
+        return next;
+      }
+    } catch (_) {
+      // Ignore localStorage failures and fallback below.
+    }
+    return Number(createValue());
+  }
+
   function clipPolygonHalfPlane(poly, nx, ny, c) {
     const out = [];
     const eps = 1e-7;
@@ -72,6 +106,13 @@
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
+    const persistentSeed = getOrCreatePersistentNumber("research_bg_seed_v2", function () {
+      return Math.floor(Math.random() * 0x7fffffff);
+    });
+    const persistentStartEpoch = getOrCreatePersistentNumber("research_bg_epoch_v2", function () {
+      return Date.now();
+    });
+
     const anchors = [hexToRgb("#74afc5"), hexToRgb("#cba5c4"), hexToRgb("#e2cf97")];
     const palettes = [
       [hexToRgb("#87bbcf"), hexToRgb("#d2b2cb"), hexToRgb("#e4d29f")],
@@ -84,22 +125,35 @@
       height: 0,
       dpr: 1,
       points: [],
-      rafId: 0
+      rafId: 0,
+      seed: persistentSeed,
+      startEpoch: persistentStartEpoch
     };
 
     function buildPoints() {
       const area = state.width * state.height;
       const count = clamp(Math.round(area / 110000), 18, 34);
       const margin = 120;
+      const mixSeed =
+        ((state.seed >>> 0) ^
+          ((Math.floor(state.width) * 73856093) >>> 0) ^
+          ((Math.floor(state.height) * 19349663) >>> 0)) >>>
+        0;
+      const rand = mulberry32(mixSeed);
+
       state.points = Array.from({ length: count }, (_, i) => ({
-        x: Math.random() * state.width,
-        y: Math.random() * state.height,
-        vx: (Math.random() - 0.5) * 0.045,
-        vy: (Math.random() - 0.5) * 0.04,
-        phaseA: Math.random() * Math.PI * 2,
-        phaseB: Math.random() * Math.PI * 2,
-        wobble: 8 + Math.random() * 10,
+        x: 0,
+        y: 0,
+        vx: (rand() - 0.5) * 22,
+        vy: (rand() - 0.5) * 20,
+        phaseA: rand() * Math.PI * 2,
+        phaseB: rand() * Math.PI * 2,
+        freqA: 0.0001 + rand() * 0.00008,
+        freqB: 0.000095 + rand() * 0.00008,
+        wobble: 8 + rand() * 10,
         margin: margin,
+        baseX: -margin + rand() * (state.width + margin * 2),
+        baseY: -margin + rand() * (state.height + margin * 2),
         colorA: i % anchors.length,
         colorB: (i + 1) % anchors.length
       }));
@@ -115,25 +169,21 @@
       buildPoints();
     }
 
-    function updatePoints(delta, time) {
-      const speedScale = Math.min(2.3, Math.max(0.7, delta));
+    function updatePoints(timeMs) {
+      const t = timeMs / 1000;
       for (const p of state.points) {
-        p.x += p.vx * speedScale;
-        p.y += p.vy * speedScale;
-
         const m = p.margin;
-        if (p.x < -m) p.x = state.width + m;
-        if (p.x > state.width + m) p.x = -m;
-        if (p.y < -m) p.y = state.height + m;
-        if (p.y > state.height + m) p.y = -m;
-
-        p.cx = p.x + Math.cos(time * 0.00022 + p.phaseA) * p.wobble;
-        p.cy = p.y + Math.sin(time * 0.00019 + p.phaseB) * p.wobble * 0.85;
+        const xRaw = p.baseX + p.vx * t + Math.cos(timeMs * p.freqA + p.phaseA) * p.wobble;
+        const yRaw = p.baseY + p.vy * t + Math.sin(timeMs * p.freqB + p.phaseB) * p.wobble * 0.85;
+        p.x = wrap(xRaw, -m, state.width + m);
+        p.y = wrap(yRaw, -m, state.height + m);
+        p.cx = p.x;
+        p.cy = p.y;
       }
     }
 
     function drawGradient(time) {
-      const t = (time * 0.00003) % palettes.length;
+      const t = (time * 0.00002) % palettes.length;
       const i0 = Math.floor(t);
       const i1 = (i0 + 1) % palettes.length;
       const f = t - i0;
@@ -142,8 +192,8 @@
       const c1 = mixColor(palettes[i0][1], palettes[i1][1], f);
       const c2 = mixColor(palettes[i0][2], palettes[i1][2], f);
 
-      const x1 = state.width * (0.5 + 0.4 * Math.cos(time * 0.00006));
-      const y1 = state.height * (0.5 + 0.34 * Math.sin(time * 0.000055));
+      const x1 = state.width * (0.5 + 0.4 * Math.cos(time * 0.00004));
+      const y1 = state.height * (0.5 + 0.34 * Math.sin(time * 0.000037));
       const x2 = state.width - x1;
       const y2 = state.height - y1;
 
@@ -179,6 +229,8 @@
         { x: state.width, y: state.height },
         { x: 0, y: state.height }
       ];
+      const canFilter = typeof ctx.filter === "string";
+      const blurValue = "blur(0.8px)";
 
       for (let i = 0; i < state.points.length; i += 1) {
         const s = state.points[i];
@@ -195,7 +247,7 @@
         }
 
         if (poly.length < 3) continue;
-        const blend = 0.5 + 0.5 * Math.sin(time * 0.00022 + s.phaseA * 0.7);
+        const blend = 0.5 + 0.5 * Math.sin(time * 0.00014 + s.phaseA * 0.7);
         const color = mixColor(anchors[s.colorA], anchors[s.colorB], blend);
 
         ctx.beginPath();
@@ -204,12 +256,14 @@
           ctx.lineTo(poly[k].x, poly[k].y);
         }
         ctx.closePath();
+        if (canFilter) ctx.filter = blurValue;
         ctx.fillStyle = colorRgba(color, 0.2);
         ctx.fill();
-        ctx.strokeStyle = "rgba(63, 80, 94, 0.24)";
-        ctx.lineWidth = 1.1;
+        ctx.strokeStyle = "rgba(60, 78, 93, 0.2)";
+        ctx.lineWidth = 1.05;
         ctx.stroke();
       }
+      if (canFilter) ctx.filter = "none";
     }
 
     function drawSitePoints() {
@@ -221,14 +275,11 @@
       }
     }
 
-    let prevTime = performance.now();
-    function frame(now) {
-      const delta = (now - prevTime) / 16.6667;
-      prevTime = now;
-
-      drawGradient(now);
-      updatePoints(delta, now);
-      drawVoronoi(now);
+    function frame() {
+      const worldMs = Date.now() - state.startEpoch;
+      drawGradient(worldMs);
+      updatePoints(worldMs);
+      drawVoronoi(worldMs);
       drawSitePoints();
 
       state.rafId = requestAnimationFrame(frame);
@@ -243,7 +294,6 @@
         cancelAnimationFrame(state.rafId);
         state.rafId = 0;
       } else if (!document.hidden && !state.rafId) {
-        prevTime = performance.now();
         state.rafId = requestAnimationFrame(frame);
       }
     });

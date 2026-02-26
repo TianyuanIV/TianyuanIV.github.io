@@ -157,23 +157,40 @@ a:not(.btn):focus-visible {
 }
 
 @media (min-width: 992px) {
+  .navbar .navbar-collapse {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+  }
+
+  .navbar .navbar-collapse::before,
+  .navbar .navbar-collapse::after {
+    content: none;
+  }
+
   .navbar .container-fluid::before,
   .navbar .container-fluid::after {
     content: "";
     position: absolute;
     top: 50%;
-    width: clamp(84px, 14vw, 172px);
+    width: clamp(130px, 18vw, 220px);
     border-top: 1px solid rgba(94, 112, 126, 0.55);
     transform: translateY(-50%);
     pointer-events: none;
   }
 
   .navbar .container-fluid::before {
-    left: 0.4rem;
+    left: 0.5rem;
   }
 
   .navbar .container-fluid::after {
-    right: 0.4rem;
+    right: 0.5rem;
+  }
+
+  .navbar .navbar-nav {
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
 
   .navbar-brand {
@@ -183,19 +200,21 @@ a:not(.btn):focus-visible {
 
 .hero-panel {
   background:
-    linear-gradient(130deg, rgba(255, 255, 255, 0.72) 0%, rgba(246, 251, 255, 0.62) 48%, rgba(242, 251, 247, 0.62) 100%);
-  border: 1px solid rgba(209, 223, 236, 0.85);
+    linear-gradient(130deg, rgba(255, 255, 255, 0.5) 0%, rgba(246, 251, 255, 0.38) 48%, rgba(242, 251, 247, 0.36) 100%) !important;
+  border: 1px solid rgba(217, 230, 242, 0.58);
   border-radius: 0.85rem;
-  box-shadow: 0 10px 28px rgba(31, 111, 139, 0.08);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(31, 66, 96, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .page-card {
-  background-color: var(--bg-panel-glass);
-  border: 1px solid rgba(212, 223, 235, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.45) !important;
+  border: 1px solid rgba(217, 230, 242, 0.58) !important;
   border-top: 3px solid transparent !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .page-card:hover {
@@ -246,12 +265,13 @@ a:not(.btn):focus-visible {
 }
 
 .content-frame {
-  background: var(--bg-panel-glass-strong);
-  border: 1px solid rgba(212, 223, 235, 0.9);
+  background: rgba(255, 255, 255, 0.42) !important;
+  border: 1px solid rgba(216, 230, 242, 0.6);
   border-radius: 0.85rem;
   padding: 1.25rem;
-  box-shadow: 0 6px 18px rgba(26, 50, 77, 0.05);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 24px rgba(23, 48, 74, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .sidebar-fixed {
@@ -260,9 +280,15 @@ a:not(.btn):focus-visible {
   bottom: 0;
   width: 25%;
   overflow-y: auto;
-  background: linear-gradient(180deg, rgba(249, 252, 255, 0.68) 0%, rgba(255, 255, 255, 0.62) 22%, rgba(255, 255, 255, 0.6) 100%);
-  border-right-color: #d4deea !important;
-  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(250, 253, 255, 0.42) 0%, rgba(255, 255, 255, 0.35) 22%, rgba(255, 255, 255, 0.3) 100%) !important;
+  border-right-color: rgba(182, 201, 219, 0.55) !important;
+  box-shadow: 0 10px 24px rgba(23, 48, 74, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.sidebar-fixed.bg-white {
+  background: linear-gradient(180deg, rgba(250, 253, 255, 0.42) 0%, rgba(255, 255, 255, 0.35) 22%, rgba(255, 255, 255, 0.3) 100%) !important;
 }
 
 .main-with-sidebar {
@@ -309,11 +335,15 @@ a:not(.btn):focus-visible {
 }
 
 .markdown-host h1 {
-  color: var(--accent-blue);
+  color: #2f8fce;
 }
 
 .markdown-host h2 {
-  color: var(--accent-green);
+  color: #9a63bc;
+}
+
+.markdown-host h3 {
+  color: #3b8ea4;
 }
 
 .markdown-host code {

@@ -57,7 +57,7 @@ Data analysis page structure:
                 <a class="nav-link sidebar-link" href="#viz-workbench">图像绘制</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link sidebar-link" href="#scripts-models">脚本与模型</a>
+                <a class="nav-link sidebar-link" href="#calc-workbench">计算</a>
               </li>
             </ul>
           </div>
@@ -65,7 +65,7 @@ Data analysis page structure:
 
         <main class="px-md-4 main-with-sidebar">
           <div class="py-4">
-            <h1 class="h3 mb-4">数据分析工作台</h1>
+            <h1 class="h3 mb-4">一、绘图</h1>
 
             <section id="viz-workbench" class="mb-4">
               <section class="content-frame mb-4">
@@ -124,9 +124,33 @@ Data analysis page structure:
               </section>
             </section>
 
-            <section id="scripts-models" class="content-frame">
-              <h2 class="h5 mb-3">脚本与模型</h2>
-              <p class="text-muted mb-0">暂未添加内容。</p>
+            <h1 class="h3 mb-4">二、计算</h1>
+            <section id="calc-workbench" class="mb-4">
+              <section class="content-frame mb-4">
+                <h2 class="h5 mb-3">1. 选择计算内容</h2>
+                <div class="row g-3">
+                  <div class="col-lg-5">
+                    <label for="calcScriptSelect" class="form-label">计算项目</label>
+                    <select id="calcScriptSelect" class="form-select"></select>
+                  </div>
+                </div>
+                <div id="calcParamRow" class="row g-3 mt-1"></div>
+                <div id="calcWorkbenchPanel" class="calc-workbench-panel mt-3"></div>
+                <div class="mt-3">
+                  <button id="runCalcBtn" class="btn btn-primary" type="button">执行计算</button>
+                  <button id="exportCalcBtn" class="btn btn-outline-primary ms-2" type="button" disabled>导出结果图（PNG）</button>
+                </div>
+              </section>
+
+              <section class="content-frame">
+                <h2 class="h5 mb-3">2. 结果展示</h2>
+                <div id="calcResult" class="result-box">
+                  <span class="text-muted">尚未执行计算</span>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                  <span id="calcStatus" class="small text-muted align-self-center">尚未执行计算</span>
+                </div>
+              </section>
             </section>
           </div>
         </main>
@@ -141,6 +165,7 @@ Data analysis page structure:
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="assets/js/data-analysis-page.js"></script>
     <script src="assets/js/low-cost-bg.js"></script>
   </body>

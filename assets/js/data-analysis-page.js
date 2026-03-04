@@ -10,12 +10,24 @@
   const downloadPlotBtn = document.getElementById("downloadPlotBtn");
   const plotStatus = document.getElementById("plotStatus");
   const plotResult = document.getElementById("plotResult");
+  const calcScriptSelect = document.getElementById("calcScriptSelect");
+  const calcParamRow = document.getElementById("calcParamRow");
+  const calcWorkbenchPanel = document.getElementById("calcWorkbenchPanel");
+  const runCalcBtn = document.getElementById("runCalcBtn");
+  const exportCalcBtn = document.getElementById("exportCalcBtn");
+  const calcResult = document.getElementById("calcResult");
+  const calcStatus = document.getElementById("calcStatus");
 
-  if (
+  const missingPlotWorkbench = (
     !workbookInput || !workbookStatus || !sheetTabList || !sheetPreviewTable ||
     !plotScriptSelect || !scriptParamRow || !scriptDoc || !generatePlotBtn ||
     !downloadPlotBtn || !plotStatus || !plotResult
-  ) return;
+  );
+  if (missingPlotWorkbench) return;
+
+  const hasCalcWorkbench = Boolean(
+    calcScriptSelect && calcParamRow && calcWorkbenchPanel && runCalcBtn && calcResult && calcStatus
+  );
 
   const summaryLabels = new Set(["total", "sum", "总计", "总和", "合计"]);
   let mathJaxLoader = null;
@@ -69,23 +81,169 @@
       }
     }
   ];
+  const calcRegistry = [
+    {
+      id: "qpcr_quant",
+      label: "qPCR定量",
+      run: async function () {
+        renderQpcrWorkbench();
+        return "已加载 qPCR 96孔板，可进行区域标注。";
+      }
+    }
+  ];
+  const calcSchemeRegistry = [
+    {
+      id: "qpcr_scheme_v1",
+      label: "方案1（μL/孔）：mix=5；水=3.6；引物=0.4；cDNA=1",
+      mixPerWell: 5,
+      waterPerWell: 3.6,
+      primerPerWell: 0.4,
+      cdnaPerWell: 1
+    }
+  ];
+  const qpcrGeneColorPalette = [
+    "#2f7de1",
+    "#22a061",
+    "#f59e0b",
+    "#c257d6",
+    "#e55353",
+    "#00a8b5",
+    "#5f6af2",
+    "#bc7f21"
+  ];
+  const qpcrState = {
+    rows: 8,
+    cols: 12,
+    selecting: false,
+    anchor: null,
+    hover: null,
+    selectedKeys: new Set(),
+    pairs: [],
+    selectedPairId: "",
+    geneAssignments: new Map(),
+    primerAssignments: new Map(),
+    volumeByPairId: new Map(),
+    lastCalcWarnings: [],
+    geneColorMap: new Map(),
+    primerColorMap: new Map(),
+    primerCountByGene: new Map(),
+    wellNodes: new Map(),
+    globalMouseUpBound: false,
+    globalResizeBound: false,
+    seq: 0
+  };
 
   const state = {
     workbook: null,
     sheetNames: [],
     activePreviewSheet: "",
-    selectedScriptId: scriptRegistry[0].id,
+    selectedScriptId: "",
     params: {},
-    hasPlot: false
+    hasPlot: false,
+    selectedCalcId: "",
+    selectedCalcScheme: "",
+    qpcrRepeatN: 1,
+    qpcrCdnaTypeCount: 1,
+    calcResultReady: false
   };
 
   function currentScript() {
-    return scriptRegistry.find((item) => item.id === state.selectedScriptId) || scriptRegistry[0];
+    return scriptRegistry.find((item) => item.id === state.selectedScriptId) || null;
+  }
+
+  function currentCalcScript() {
+    return calcRegistry.find((item) => item.id === state.selectedCalcId) || null;
+  }
+
+  function currentCalcScheme() {
+    return calcSchemeRegistry.find((item) => item.id === state.selectedCalcScheme) || calcSchemeRegistry[0] || null;
   }
 
   function safeNumber(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : NaN;
+  }
+
+  function parsePositiveInt(value) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : NaN;
+  }
+
+  function round2(value) {
+    return Math.round(Number(value) * 100) / 100;
+  }
+
+  function formatMicroliter(value) {
+    return round2(value).toFixed(2);
+  }
+
+  function normalizeIdentity(text) {
+    return String(text || "").trim().toLowerCase();
+  }
+
+  function hashString(text) {
+    let hash = 0;
+    const source = String(text || "");
+    for (let i = 0; i < source.length; i += 1) hash = ((hash << 5) - hash + source.charCodeAt(i)) >>> 0;
+    return hash;
+  }
+
+  function hslToHex(h, s, l) {
+    const hue = ((Number(h) % 360) + 360) % 360;
+    const sat = Math.max(0, Math.min(100, Number(s))) / 100;
+    const light = Math.max(0, Math.min(100, Number(l))) / 100;
+    const c = (1 - Math.abs(2 * light - 1)) * sat;
+    const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
+    const m = light - c / 2;
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (hue < 60) {
+      r = c; g = x; b = 0;
+    } else if (hue < 120) {
+      r = x; g = c; b = 0;
+    } else if (hue < 180) {
+      r = 0; g = c; b = x;
+    } else if (hue < 240) {
+      r = 0; g = x; b = c;
+    } else if (hue < 300) {
+      r = x; g = 0; b = c;
+    } else {
+      r = c; g = 0; b = x;
+    }
+
+    const toHex = function (value) {
+      return Math.round((value + m) * 255).toString(16).padStart(2, "0");
+    };
+    return "#" + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  function getGeneColor(geneName) {
+    const key = normalizeIdentity(geneName);
+    if (!key) return qpcrGeneColorPalette[0];
+    if (qpcrState.geneColorMap.has(key)) return qpcrState.geneColorMap.get(key);
+
+    const idx = qpcrState.geneColorMap.size;
+    const color = qpcrGeneColorPalette[idx % qpcrGeneColorPalette.length];
+    qpcrState.geneColorMap.set(key, color);
+    return color;
+  }
+
+  function getPrimerColor(geneName, primerName) {
+    const geneKey = normalizeIdentity(geneName);
+    const primerKey = normalizeIdentity(primerName);
+    const key = geneKey + "||" + primerKey;
+    if (!geneKey || !primerKey) return "#2f7de1";
+    if (qpcrState.primerColorMap.has(key)) return qpcrState.primerColorMap.get(key);
+
+    const count = qpcrState.primerCountByGene.get(geneKey) || 0;
+    const seed = hashString(geneKey) % 360;
+    const hue = (seed + count * 53) % 360;
+    const color = hslToHex(hue, 72, 46);
+    qpcrState.primerColorMap.set(key, color);
+    qpcrState.primerCountByGene.set(geneKey, count + 1);
+    return color;
   }
 
   function setWorkbookStatus(text, isError) {
@@ -98,6 +256,77 @@
     plotStatus.textContent = text;
     plotStatus.classList.toggle("text-danger", Boolean(isError));
     plotStatus.classList.toggle("text-muted", !isError);
+  }
+
+  function setCalcStatus(text, isError) {
+    if (!hasCalcWorkbench) return;
+    calcStatus.textContent = text;
+    calcStatus.classList.toggle("text-danger", Boolean(isError));
+    calcStatus.classList.toggle("text-muted", !isError);
+  }
+
+  function setCalcExportEnabled(enabled) {
+    if (!exportCalcBtn) return;
+    exportCalcBtn.disabled = !enabled;
+  }
+
+  function markCalcResultDirty() {
+    state.calcResultReady = false;
+    setCalcExportEnabled(false);
+  }
+
+  function buildCalcExportFilename() {
+    const now = new Date();
+    const pad = function (n) { return String(n).padStart(2, "0"); };
+    return "qpcr-calc-export-" +
+      now.getFullYear() +
+      pad(now.getMonth() + 1) +
+      pad(now.getDate()) + "-" +
+      pad(now.getHours()) +
+      pad(now.getMinutes()) +
+      pad(now.getSeconds()) + ".png";
+  }
+
+  function composeCalcExportCanvas(boardCanvas, resultCanvas) {
+    const pad = 24;
+    const titleH = 42;
+    const blockTitleH = 30;
+    const gap = 16;
+    const boardBlockH = boardCanvas ? (blockTitleH + boardCanvas.height + gap) : 0;
+    const resultBlockH = blockTitleH + resultCanvas.height;
+    const width = Math.max(
+      boardCanvas ? boardCanvas.width : 0,
+      resultCanvas.width,
+      1100
+    ) + pad * 2;
+    const height = pad + titleH + gap + boardBlockH + resultBlockH + pad;
+
+    const out = document.createElement("canvas");
+    out.width = Math.ceil(width);
+    out.height = Math.ceil(height);
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    let y = pad;
+    ctx.fillStyle = "#1f2f43";
+    ctx.font = '700 30px "HarmonyOS Sans Black", sans-serif';
+    ctx.fillText("qPCR定量计算结果", pad, y + 30);
+    y += titleH + gap;
+
+    if (boardCanvas) {
+      ctx.font = '700 22px "HarmonyOS Sans Black", sans-serif';
+      ctx.fillText("96孔板图", pad, y + 22);
+      y += blockTitleH;
+      ctx.drawImage(boardCanvas, pad, y);
+      y += boardCanvas.height + gap;
+    }
+
+    ctx.font = '700 22px "HarmonyOS Sans Black", sans-serif';
+    ctx.fillText("计算结果表", pad, y + 22);
+    y += blockTitleH;
+    ctx.drawImage(resultCanvas, pad, y);
+    return out;
   }
 
   function escapeHtml(text) {
@@ -443,6 +672,10 @@
   }
 
   async function loadScriptDoc(scriptDef) {
+    if (!scriptDef) {
+      scriptDoc.innerHTML = '<p class="text-muted mb-0">请选择绘图脚本后查看使用说明。</p>';
+      return;
+    }
     const docPath = normalizeMdPath("scripts/" + scriptDef.docName + ".md");
     if (!docPath) {
       scriptDoc.innerHTML = '<p class="text-danger mb-0">脚本说明路径无效。</p>';
@@ -567,6 +800,13 @@
   function renderParamControls() {
     scriptParamRow.innerHTML = "";
     const scriptDef = currentScript();
+    if (!scriptDef) {
+      const note = document.createElement("div");
+      note.className = "col-12";
+      note.innerHTML = '<div class="small text-muted">请先选择绘图脚本。</div>';
+      scriptParamRow.appendChild(note);
+      return;
+    }
     const hasWorkbook = Boolean(state.workbook && state.sheetNames.length > 0);
     const memo = { ...state.params };
 
@@ -865,7 +1105,7 @@
   async function handleGeneratePlot() {
     const scriptDef = currentScript();
     if (!scriptDef) {
-      setPlotStatus("未找到可用脚本。", true);
+      setPlotStatus("请先选择绘图脚本。", true);
       return;
     }
     if (!state.workbook) {
@@ -958,7 +1198,8 @@
     loadWorkbook(file)
       .then(function () {
         setWorkbookStatus("已加载 " + file.name + "（" + state.sheetNames.length + " 个 Sheet）", false);
-        setPlotStatus("已就绪，请设置参数并点击“生成图像”。", false);
+        if (currentScript()) setPlotStatus("已就绪，请设置参数并点击“生成图像”。", false);
+        else setPlotStatus("请先选择绘图脚本。", false);
       })
       .catch(function (err) {
         clearWorkbookView();
@@ -969,6 +1210,10 @@
 
   function renderScriptSelect() {
     plotScriptSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "请选择绘图脚本";
+    plotScriptSelect.appendChild(placeholder);
     scriptRegistry.forEach((scriptDef) => {
       const option = document.createElement("option");
       option.value = scriptDef.id;
@@ -982,7 +1227,963 @@
     state.selectedScriptId = plotScriptSelect.value;
     state.params = {};
     renderParamControls();
+    generatePlotBtn.disabled = !currentScript();
     loadScriptDoc(currentScript());
+    if (currentScript()) {
+      if (state.workbook) setPlotStatus("已选择脚本，请设置参数并点击“生成图像”。", false);
+      else setPlotStatus("已选择脚本，请先上传 xlsx 文件。", false);
+    } else {
+      setPlotStatus("请先选择绘图脚本。", false);
+      downloadPlotBtn.disabled = true;
+    }
+  }
+
+  function wellKey(row, col) {
+    return row + ":" + col;
+  }
+
+  function getCurrentCalcPair() {
+    return qpcrState.pairs.find((item) => item.id === qpcrState.selectedPairId) || null;
+  }
+
+  function currentCalcSchemeLabel() {
+    const scheme = calcSchemeRegistry.find((item) => item.id === state.selectedCalcScheme);
+    return scheme ? scheme.label : "未选择定量方案";
+  }
+
+  function clampQpcrRect(a, b) {
+    const r1 = Math.max(1, Math.min(a.row, b.row));
+    const r2 = Math.min(qpcrState.rows, Math.max(a.row, b.row));
+    const c1 = Math.max(1, Math.min(a.col, b.col));
+    const c2 = Math.min(qpcrState.cols, Math.max(a.col, b.col));
+    return { r1: r1, r2: r2, c1: c1, c2: c2 };
+  }
+
+  function keysFromRect(rect) {
+    const out = [];
+    for (let row = rect.r1; row <= rect.r2; row += 1) {
+      for (let col = rect.c1; col <= rect.c2; col += 1) out.push(wellKey(row, col));
+    }
+    return out;
+  }
+
+  function toRgba(hex, alpha) {
+    const raw = String(hex || "").replace("#", "").trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(raw)) return "rgba(47,125,225," + alpha + ")";
+    const r = Number.parseInt(raw.slice(0, 2), 16);
+    const g = Number.parseInt(raw.slice(2, 4), 16);
+    const b = Number.parseInt(raw.slice(4, 6), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+
+  function getQpcrParams() {
+    return {
+      n: parsePositiveInt(state.qpcrRepeatN),
+      type: parsePositiveInt(state.qpcrCdnaTypeCount)
+    };
+  }
+
+  function expectedPairWellCount(n, type) {
+    return n * type;
+  }
+
+  function buildQpcrVolumeRows(scheme, n, type, pairs) {
+    const redundancy = 1.2;
+    const pairWellCount = expectedPairWellCount(n, type);
+    return pairs.map((pair) => {
+      const mixVol = scheme.mixPerWell * pairWellCount * redundancy;
+      const waterVol = scheme.waterPerWell * pairWellCount * redundancy;
+      const primerVol = scheme.primerPerWell * pairWellCount * redundancy;
+      const vt = mixVol + waterVol + primerVol;
+      return {
+        pairId: pair.id,
+        geneName: pair.geneName,
+        primerName: pair.primerName,
+        pairWellCountExpected: pairWellCount,
+        mixVol: mixVol,
+        waterVol: waterVol,
+        primerVol: primerVol,
+        vt: vt
+      };
+    });
+  }
+
+  function buildCdnaRows(scheme, n, type) {
+    const redundancy = 1.2;
+    const cdnaVolPerType = scheme.cdnaPerWell * n * redundancy;
+    const rows = [];
+    for (let i = 1; i <= type; i += 1) rows.push({ typeName: "type" + i, cdnaVol: cdnaVolPerType });
+    return { rows: rows, cdnaVolPerType: cdnaVolPerType };
+  }
+
+  function calcPairV(vt, cdnaVolPerType, type) {
+    return ((vt / type + cdnaVolPerType) / 3) * 1.1 / 1.2;
+  }
+
+  function buildPairActualWellCountMap() {
+    const map = new Map();
+    qpcrState.primerAssignments.forEach((assignment) => {
+      const pairId = assignment.pairId;
+      map.set(pairId, (map.get(pairId) || 0) + 1);
+    });
+    return map;
+  }
+
+  function buildWellCountWarnings(pairs, expectedCount, actualMap) {
+    const warnings = [];
+    pairs.forEach((pair) => {
+      const actual = actualMap.get(pair.id) || 0;
+      if (actual !== expectedCount) {
+        warnings.push({
+          pairId: pair.id,
+          geneName: pair.geneName,
+          primerName: pair.primerName,
+          expected: expectedCount,
+          actual: actual
+        });
+      }
+    });
+    return warnings;
+  }
+
+  function validateQpcrInputAndToggleRun(showStatus) {
+    if (!hasCalcWorkbench || state.selectedCalcId !== "qpcr_quant") return false;
+    const params = getQpcrParams();
+    const valid = Number.isFinite(params.n) && Number.isFinite(params.type);
+    runCalcBtn.disabled = !valid;
+    if (showStatus) {
+      if (valid) setCalcStatus("参数已更新，可执行计算。", false);
+      else setCalcStatus("重复数 n 与 cDNA种类数 type 必须为正整数。", true);
+    }
+    return valid;
+  }
+
+  function renderCalcTablesAndWarnings(volumeRows, cdnaRows, warnings, n, type, schemeLabel) {
+    const volumeBody = volumeRows.map((row) =>
+      "<tr>" +
+      "<td>" + escapeHtml(row.geneName) + "</td>" +
+      "<td>" + escapeHtml(row.primerName) + "</td>" +
+      "<td>" + row.pairWellCountExpected + "</td>" +
+      "<td>" + formatMicroliter(row.mixVol) + "</td>" +
+      "<td>" + formatMicroliter(row.waterVol) + "</td>" +
+      "<td>" + formatMicroliter(row.primerVol) + "</td>" +
+      "<td>" + formatMicroliter(row.vt) + "</td>" +
+      "</tr>"
+    ).join("");
+
+    const cdnaBody = cdnaRows.map((row) =>
+      "<tr>" +
+      "<td>" + escapeHtml(row.typeName) + "</td>" +
+      "<td>" + formatMicroliter(row.cdnaVol) + "</td>" +
+      "</tr>"
+    ).join("");
+
+    const warningsHtml = warnings.length === 0
+      ? ""
+      : (
+        '<h3 class="h6 mb-2">孔位校验警告</h3>' +
+        '<div class="small text-warning">' +
+        warnings.map((item) =>
+          escapeHtml(item.geneName + " / " + item.primerName) +
+          "：实际孔数 " + item.actual + "，期望孔数 " + item.expected
+        ).join("<br />") +
+        "</div>"
+      );
+
+    calcResult.innerHTML =
+      '<div class="small text-muted mb-2">方案：' + escapeHtml(schemeLabel) + "；n=" + n + "；type=" + type + "</div>" +
+      '<h3 class="h6 mb-2">总体积表（单位：μL）</h3>' +
+      '<div class="table-responsive mb-3">' +
+      '<table class="table table-sm table-bordered align-middle mb-0">' +
+      "<thead><tr><th>基因</th><th>引物</th><th>孔数(n×type)</th><th>mix</th><th>水</th><th>引物</th><th>VT</th></tr></thead>" +
+      "<tbody>" + volumeBody + "</tbody>" +
+      "</table>" +
+      "</div>" +
+      '<h3 class="h6 mb-2">cDNA体积表（单位：μL）</h3>' +
+      '<div class="table-responsive mb-3">' +
+      '<table class="table table-sm table-bordered align-middle mb-0">' +
+      "<thead><tr><th>cDNA类型</th><th>体积</th></tr></thead>" +
+      "<tbody>" + cdnaBody + "</tbody>" +
+      "</table>" +
+      "</div>" +
+      warningsHtml;
+  }
+
+  function clearQpcrSelection() {
+    qpcrState.selectedKeys = new Set();
+    qpcrState.anchor = null;
+    qpcrState.hover = null;
+    repaintQpcrBoard();
+  }
+
+  function renderQpcrPairSelect() {
+    const pairSelect = document.getElementById("qpcrPairSelect");
+    if (!pairSelect) return;
+    pairSelect.innerHTML = "";
+
+    if (qpcrState.pairs.length === 0) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "请先添加基因/引物名称对";
+      pairSelect.appendChild(option);
+      pairSelect.value = "";
+      qpcrState.selectedPairId = "";
+      pairSelect.disabled = true;
+      return;
+    }
+
+    pairSelect.disabled = false;
+    qpcrState.pairs.forEach((pair) => {
+      const option = document.createElement("option");
+      option.value = pair.id;
+      option.textContent = pair.geneName + " | " + pair.primerName;
+      pairSelect.appendChild(option);
+    });
+    if (!qpcrState.selectedPairId || !qpcrState.pairs.some((p) => p.id === qpcrState.selectedPairId)) {
+      qpcrState.selectedPairId = qpcrState.pairs[0].id;
+    }
+    pairSelect.value = qpcrState.selectedPairId;
+  }
+
+  function renderQpcrLegend() {
+    const legend = document.getElementById("qpcrPairLegend");
+    if (!legend) return;
+    legend.innerHTML = "";
+    if (qpcrState.pairs.length === 0) {
+      legend.innerHTML = '<span class="small text-muted">尚未添加名称对。</span>';
+      return;
+    }
+
+    qpcrState.pairs.forEach((pair) => {
+      const item = document.createElement("div");
+      item.className = "qpcr-legend-item";
+
+      const swatch = document.createElement("span");
+      swatch.className = "qpcr-legend-swatch";
+      swatch.style.backgroundColor = toRgba(pair.primerColor, 0.22);
+      swatch.style.borderColor = pair.geneColor;
+
+      const text = document.createElement("span");
+      text.className = "small";
+      text.textContent = pair.geneName + " / " + pair.primerName;
+
+      item.appendChild(swatch);
+      item.appendChild(text);
+      legend.appendChild(item);
+    });
+  }
+
+  function createSvgLine(svg, x1, y1, x2, y2, color) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", String(x1));
+    line.setAttribute("y1", String(y1));
+    line.setAttribute("x2", String(x2));
+    line.setAttribute("y2", String(y2));
+    line.setAttribute("stroke", color);
+    line.setAttribute("stroke-width", "3");
+    line.setAttribute("stroke-linecap", "square");
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(line);
+  }
+
+  function renderQpcrGeneOverlays() {
+    const board = document.getElementById("qpcrBoard");
+    const overlayHost = document.getElementById("qpcrGeneOverlay");
+    if (!board || !overlayHost) return;
+    overlayHost.innerHTML = "";
+    if (qpcrState.geneAssignments.size === 0) return;
+
+    const boardRect = board.getBoundingClientRect();
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", String(Math.max(1, Math.round(boardRect.width))));
+    svg.setAttribute("height", String(Math.max(1, Math.round(boardRect.height))));
+    svg.setAttribute("viewBox", "0 0 " + Math.max(1, boardRect.width) + " " + Math.max(1, boardRect.height));
+    svg.classList.add("qpcr-gene-svg");
+
+    const geneGroups = new Map();
+    qpcrState.geneAssignments.forEach((assignment, key) => {
+      const geneKey = assignment.geneKey;
+      if (!geneGroups.has(geneKey)) {
+        geneGroups.set(geneKey, {
+          geneName: assignment.geneName,
+          color: assignment.color,
+          cells: new Set()
+        });
+      }
+      geneGroups.get(geneKey).cells.add(key);
+    });
+
+    geneGroups.forEach((group) => {
+      const hasCell = function (row, col) {
+        if (row < 1 || row > qpcrState.rows || col < 1 || col > qpcrState.cols) return false;
+        return group.cells.has(wellKey(row, col));
+      };
+
+      const addHorizontalRuns = function (checkOuter, yFromCell, xFromStartCell, xFromEndCell) {
+        for (let row = 1; row <= qpcrState.rows; row += 1) {
+          let col = 1;
+          while (col <= qpcrState.cols) {
+            if (!hasCell(row, col) || !checkOuter(row, col)) {
+              col += 1;
+              continue;
+            }
+
+            const startCol = col;
+            while (
+              col + 1 <= qpcrState.cols &&
+              hasCell(row, col + 1) &&
+              checkOuter(row, col + 1)
+            ) {
+              col += 1;
+            }
+            const endCol = col;
+
+            const startNode = qpcrState.wellNodes.get(wellKey(row, startCol));
+            const endNode = qpcrState.wellNodes.get(wellKey(row, endCol));
+            if (startNode && endNode) {
+              const startRect = startNode.getBoundingClientRect();
+              const endRect = endNode.getBoundingClientRect();
+              createSvgLine(
+                svg,
+                xFromStartCell(startRect, boardRect),
+                yFromCell(startRect, boardRect),
+                xFromEndCell(endRect, boardRect),
+                yFromCell(startRect, boardRect),
+                group.color
+              );
+            }
+            col += 1;
+          }
+        }
+      };
+
+      const addVerticalRuns = function (checkOuter, xFromCell, yFromStartCell, yFromEndCell) {
+        for (let col = 1; col <= qpcrState.cols; col += 1) {
+          let row = 1;
+          while (row <= qpcrState.rows) {
+            if (!hasCell(row, col) || !checkOuter(row, col)) {
+              row += 1;
+              continue;
+            }
+
+            const startRow = row;
+            while (
+              row + 1 <= qpcrState.rows &&
+              hasCell(row + 1, col) &&
+              checkOuter(row + 1, col)
+            ) {
+              row += 1;
+            }
+            const endRow = row;
+
+            const startNode = qpcrState.wellNodes.get(wellKey(startRow, col));
+            const endNode = qpcrState.wellNodes.get(wellKey(endRow, col));
+            if (startNode && endNode) {
+              const startRect = startNode.getBoundingClientRect();
+              const endRect = endNode.getBoundingClientRect();
+              createSvgLine(
+                svg,
+                xFromCell(startRect, boardRect),
+                yFromStartCell(startRect, boardRect),
+                xFromCell(startRect, boardRect),
+                yFromEndCell(endRect, boardRect),
+                group.color
+              );
+            }
+            row += 1;
+          }
+        }
+      };
+
+      addHorizontalRuns(
+        function (r, c) { return !hasCell(r - 1, c); },
+        function (rect) { return rect.top - boardRect.top; },
+        function (rect) { return rect.left - boardRect.left; },
+        function (rect) { return rect.right - boardRect.left; }
+      );
+      addHorizontalRuns(
+        function (r, c) { return !hasCell(r + 1, c); },
+        function (rect) { return rect.bottom - boardRect.top; },
+        function (rect) { return rect.left - boardRect.left; },
+        function (rect) { return rect.right - boardRect.left; }
+      );
+      addVerticalRuns(
+        function (r, c) { return !hasCell(r, c - 1); },
+        function (rect) { return rect.left - boardRect.left; },
+        function (rect) { return rect.top - boardRect.top; },
+        function (rect) { return rect.bottom - boardRect.top; }
+      );
+      addVerticalRuns(
+        function (r, c) { return !hasCell(r, c + 1); },
+        function (rect) { return rect.right - boardRect.left; },
+        function (rect) { return rect.top - boardRect.top; },
+        function (rect) { return rect.bottom - boardRect.top; }
+      );
+    });
+
+    overlayHost.appendChild(svg);
+  }
+
+  function repaintQpcrBoard() {
+    if (qpcrState.wellNodes.size === 0) return;
+    qpcrState.wellNodes.forEach((wellNode) => {
+      wellNode.classList.remove("qpcr-well-selected", "qpcr-well-primer");
+      wellNode.removeAttribute("style");
+      wellNode.title = "";
+      wellNode.querySelectorAll(".qpcr-well-volume").forEach((node) => node.remove());
+    });
+
+    qpcrState.primerAssignments.forEach((assignment, key) => {
+      const node = qpcrState.wellNodes.get(key);
+      if (!node) return;
+      node.classList.add("qpcr-well-primer");
+      node.style.backgroundColor = toRgba(assignment.color, 0.28);
+      node.style.borderColor = assignment.color;
+      node.title = assignment.primerName;
+    });
+
+    qpcrState.selectedKeys.forEach((key) => {
+      const node = qpcrState.wellNodes.get(key);
+      if (!node) return;
+      node.classList.add("qpcr-well-selected");
+    });
+
+    qpcrState.primerAssignments.forEach((assignment, key) => {
+      const node = qpcrState.wellNodes.get(key);
+      if (!node) return;
+      const v = qpcrState.volumeByPairId.get(assignment.pairId);
+      if (!Number.isFinite(v)) return;
+      const label = document.createElement("span");
+      label.className = "qpcr-well-volume";
+      label.textContent = formatMicroliter(v);
+      node.appendChild(label);
+      node.title = assignment.primerName + " | V=" + formatMicroliter(v) + " μL";
+    });
+
+    renderQpcrGeneOverlays();
+  }
+
+  function updateQpcrRectSelection() {
+    if (!qpcrState.anchor || !qpcrState.hover) return;
+    const rect = clampQpcrRect(qpcrState.anchor, qpcrState.hover);
+    qpcrState.selectedKeys = new Set(keysFromRect(rect));
+    repaintQpcrBoard();
+  }
+
+  function onQpcrGlobalMouseUp() {
+    if (!qpcrState.selecting) return;
+    qpcrState.selecting = false;
+    setCalcStatus("已选择 " + qpcrState.selectedKeys.size + " 个孔位。", false);
+  }
+
+  function bindQpcrGlobalMouseUp() {
+    if (qpcrState.globalMouseUpBound) return;
+    qpcrState.globalMouseUpBound = true;
+    window.addEventListener("mouseup", onQpcrGlobalMouseUp);
+  }
+
+  function bindQpcrGlobalResize() {
+    if (qpcrState.globalResizeBound) return;
+    qpcrState.globalResizeBound = true;
+    window.addEventListener("resize", function () {
+      if (!document.getElementById("qpcrBoard")) return;
+      renderQpcrGeneOverlays();
+    });
+  }
+
+  function buildQpcrBoard(container) {
+    if (!container) return;
+    qpcrState.wellNodes = new Map();
+    container.innerHTML = "";
+
+    const topHeaders = document.createElement("div");
+    topHeaders.className = "qpcr-col-headers";
+    for (let c = 1; c <= qpcrState.cols; c += 1) {
+      const cell = document.createElement("span");
+      cell.textContent = String(c);
+      topHeaders.appendChild(cell);
+    }
+
+    const body = document.createElement("div");
+    body.className = "qpcr-board-body";
+
+    const rowHeaders = document.createElement("div");
+    rowHeaders.className = "qpcr-row-headers";
+    for (let r = 0; r < qpcrState.rows; r += 1) {
+      const cell = document.createElement("span");
+      cell.textContent = String.fromCharCode(65 + r);
+      rowHeaders.appendChild(cell);
+    }
+
+    const boardCanvas = document.createElement("div");
+    boardCanvas.className = "qpcr-board-canvas";
+    const board = document.createElement("div");
+    board.className = "qpcr-board";
+    board.id = "qpcrBoard";
+
+    for (let r = 1; r <= qpcrState.rows; r += 1) {
+      for (let c = 1; c <= qpcrState.cols; c += 1) {
+        const well = document.createElement("div");
+        well.className = "qpcr-well";
+        well.dataset.row = String(r);
+        well.dataset.col = String(c);
+        well.dataset.key = wellKey(r, c);
+        well.addEventListener("mousedown", function (evt) {
+          if (evt.button !== 0) return;
+          evt.preventDefault();
+          qpcrState.selecting = true;
+          qpcrState.anchor = { row: Number(well.dataset.row), col: Number(well.dataset.col) };
+          qpcrState.hover = { row: Number(well.dataset.row), col: Number(well.dataset.col) };
+          updateQpcrRectSelection();
+        });
+        well.addEventListener("mouseenter", function () {
+          if (!qpcrState.selecting) return;
+          qpcrState.hover = { row: Number(well.dataset.row), col: Number(well.dataset.col) };
+          updateQpcrRectSelection();
+        });
+        board.appendChild(well);
+        qpcrState.wellNodes.set(well.dataset.key, well);
+      }
+    }
+
+    const overlayHost = document.createElement("div");
+    overlayHost.className = "qpcr-gene-overlay";
+    overlayHost.id = "qpcrGeneOverlay";
+
+    boardCanvas.appendChild(board);
+    boardCanvas.appendChild(overlayHost);
+    body.appendChild(rowHeaders);
+    body.appendChild(boardCanvas);
+    container.appendChild(topHeaders);
+    container.appendChild(body);
+
+    bindQpcrGlobalMouseUp();
+    bindQpcrGlobalResize();
+  }
+
+  function renderQpcrWorkbench() {
+    if (!hasCalcWorkbench || !calcWorkbenchPanel) return;
+    qpcrState.selecting = false;
+    qpcrState.anchor = null;
+    qpcrState.hover = null;
+    qpcrState.selectedKeys = new Set();
+    qpcrState.pairs = [];
+    qpcrState.selectedPairId = "";
+    qpcrState.geneAssignments = new Map();
+    qpcrState.primerAssignments = new Map();
+    qpcrState.volumeByPairId = new Map();
+    qpcrState.lastCalcWarnings = [];
+    qpcrState.geneColorMap = new Map();
+    qpcrState.primerColorMap = new Map();
+    qpcrState.primerCountByGene = new Map();
+    qpcrState.seq = 0;
+    markCalcResultDirty();
+
+    calcWorkbenchPanel.innerHTML =
+      '<div class="qpcr-workbench">' +
+      '<div id="qpcrSchemeLabel" class="small text-muted mb-2">当前定量方案：' + escapeHtml(currentCalcSchemeLabel()) + "</div>" +
+      '<div class="row g-3 align-items-end">' +
+      '<div class="col-lg-4"><label for="qpcrPairSelect" class="form-label">名称对</label><select id="qpcrPairSelect" class="form-select"></select></div>' +
+      '<div class="col-lg-4"><label for="qpcrGeneInput" class="form-label">基因名称</label><input id="qpcrGeneInput" class="form-control" type="text" placeholder="例如: GAPDH" /></div>' +
+      '<div class="col-lg-4"><label for="qpcrPrimerInput" class="form-label">引物名称</label><input id="qpcrPrimerInput" class="form-control" type="text" placeholder="例如: GAPDH-F/R" /></div>' +
+      '<div class="col-12 d-flex flex-wrap gap-2">' +
+      '<button id="qpcrAddPairBtn" class="btn btn-outline-primary btn-sm" type="button">添加名称对</button>' +
+      '<button id="qpcrApplyGeneBtn" class="btn btn-outline-primary btn-sm" type="button">基因边框应用到选区</button>' +
+      '<button id="qpcrApplyPrimerBtn" class="btn btn-outline-primary btn-sm" type="button">引物填充应用到选区</button>' +
+      '<button id="qpcrClearSelectionBtn" class="btn btn-outline-secondary btn-sm" type="button">清空当前选区</button>' +
+      '<button id="qpcrResetMarksBtn" class="btn btn-outline-secondary btn-sm" type="button">清空全部标注</button>' +
+      "</div>" +
+      '<div class="col-12"><div id="qpcrPairLegend" class="qpcr-legend"></div></div>' +
+      "</div>" +
+      '<div class="qpcr-board-host mt-3"><div id="qpcrBoardRoot" class="qpcr-board-root"></div></div>' +
+      '<div class="small text-muted mt-2">提示：按住鼠标左键拖拽可框选矩形区域，先添加名称对，再应用“基因边框”或“引物填充”。</div>' +
+      "</div>";
+
+    const pairSelect = document.getElementById("qpcrPairSelect");
+    const geneInput = document.getElementById("qpcrGeneInput");
+    const primerInput = document.getElementById("qpcrPrimerInput");
+    const addPairBtn = document.getElementById("qpcrAddPairBtn");
+    const applyGeneBtn = document.getElementById("qpcrApplyGeneBtn");
+    const applyPrimerBtn = document.getElementById("qpcrApplyPrimerBtn");
+    const clearSelectionBtn = document.getElementById("qpcrClearSelectionBtn");
+    const resetMarksBtn = document.getElementById("qpcrResetMarksBtn");
+    buildQpcrBoard(document.getElementById("qpcrBoardRoot"));
+
+    if (pairSelect) {
+      pairSelect.addEventListener("change", function () {
+        qpcrState.selectedPairId = pairSelect.value;
+      });
+    }
+
+    if (addPairBtn) {
+      addPairBtn.addEventListener("click", function () {
+        const geneName = geneInput ? geneInput.value.trim() : "";
+        const primerName = primerInput ? primerInput.value.trim() : "";
+        if (!geneName || !primerName) {
+          setCalcStatus("请同时填写基因名称和引物名称。", true);
+          return;
+        }
+
+        qpcrState.seq += 1;
+        const geneColor = getGeneColor(geneName);
+        const primerColor = getPrimerColor(geneName, primerName);
+        const pair = {
+          id: "pair_" + qpcrState.seq,
+          geneName: geneName,
+          primerName: primerName,
+          geneColor: geneColor,
+          primerColor: primerColor
+        };
+        qpcrState.pairs.push(pair);
+        qpcrState.selectedPairId = pair.id;
+        renderQpcrPairSelect();
+        renderQpcrLegend();
+        repaintQpcrBoard();
+        markCalcResultDirty();
+
+        if (geneInput) geneInput.value = "";
+        if (primerInput) primerInput.value = "";
+        setCalcStatus("已添加名称对：" + pair.geneName + " / " + pair.primerName, false);
+      });
+    }
+
+    if (applyGeneBtn) {
+      applyGeneBtn.addEventListener("click", function () {
+        const pair = getCurrentCalcPair();
+        if (!pair) {
+          setCalcStatus("请先添加并选择一个名称对。", true);
+          return;
+        }
+        if (qpcrState.selectedKeys.size === 0) {
+          setCalcStatus("请先在96孔板上选择区域。", true);
+          return;
+        }
+
+        const geneKey = normalizeIdentity(pair.geneName);
+        qpcrState.selectedKeys.forEach((key) => {
+          qpcrState.geneAssignments.set(key, {
+            geneKey: geneKey,
+            geneName: pair.geneName,
+            color: pair.geneColor
+          });
+        });
+        clearQpcrSelection();
+        markCalcResultDirty();
+        setCalcStatus("已应用基因边框：" + pair.geneName, false);
+      });
+    }
+
+    if (applyPrimerBtn) {
+      applyPrimerBtn.addEventListener("click", function () {
+        const pair = getCurrentCalcPair();
+        if (!pair) {
+          setCalcStatus("请先添加并选择一个名称对。", true);
+          return;
+        }
+        if (qpcrState.selectedKeys.size === 0) {
+          setCalcStatus("请先在96孔板上选择区域。", true);
+          return;
+        }
+
+        qpcrState.selectedKeys.forEach((key) => {
+          qpcrState.primerAssignments.set(key, {
+            pairId: pair.id,
+            primerName: pair.primerName,
+            color: pair.primerColor
+          });
+        });
+        clearQpcrSelection();
+        markCalcResultDirty();
+        setCalcStatus("已应用引物填充：" + pair.primerName, false);
+      });
+    }
+
+    if (clearSelectionBtn) {
+      clearSelectionBtn.addEventListener("click", function () {
+        clearQpcrSelection();
+        setCalcStatus("已清空当前选区。", false);
+      });
+    }
+
+    if (resetMarksBtn) {
+      resetMarksBtn.addEventListener("click", function () {
+        qpcrState.geneAssignments = new Map();
+        qpcrState.primerAssignments = new Map();
+        qpcrState.volumeByPairId = new Map();
+        qpcrState.lastCalcWarnings = [];
+        clearQpcrSelection();
+        markCalcResultDirty();
+        setCalcStatus("已清空全部标注。", false);
+      });
+    }
+
+    renderQpcrPairSelect();
+    renderQpcrLegend();
+    repaintQpcrBoard();
+    window.requestAnimationFrame(renderQpcrGeneOverlays);
+  }
+
+  function clearCalcWorkbenchPanel() {
+    if (!hasCalcWorkbench || !calcWorkbenchPanel) return;
+    calcWorkbenchPanel.innerHTML = "";
+  }
+
+  function renderCalcResultPlaceholder(text) {
+    if (!hasCalcWorkbench) return;
+    calcResult.innerHTML = '<span class="text-muted">' + escapeHtml(text) + "</span>";
+    markCalcResultDirty();
+  }
+
+  function renderCalcParamControls() {
+    if (!hasCalcWorkbench) return;
+    calcParamRow.innerHTML = "";
+    if (!state.selectedCalcId) {
+      const note = document.createElement("div");
+      note.className = "col-12";
+      note.innerHTML = '<div class="small text-muted">请先选择计算项目。</div>';
+      calcParamRow.appendChild(note);
+      return;
+    }
+
+    if (state.selectedCalcId !== "qpcr_quant") {
+      const note = document.createElement("div");
+      note.className = "col-12";
+      note.innerHTML = '<div class="small text-muted">当前计算项暂未配置参数。</div>';
+      calcParamRow.appendChild(note);
+      return;
+    }
+
+    const schemeCol = document.createElement("div");
+    schemeCol.className = "col-lg-5";
+    const schemeLabel = document.createElement("label");
+    schemeLabel.className = "form-label";
+    schemeLabel.setAttribute("for", "calcSchemeSelect");
+    schemeLabel.textContent = "定量方案";
+    const schemeSelect = document.createElement("select");
+    schemeSelect.id = "calcSchemeSelect";
+    schemeSelect.className = "form-select";
+    calcSchemeRegistry.forEach((scheme) => {
+      const option = document.createElement("option");
+      option.value = scheme.id;
+      option.textContent = scheme.label;
+      schemeSelect.appendChild(option);
+    });
+    if (!state.selectedCalcScheme && calcSchemeRegistry.length > 0) state.selectedCalcScheme = calcSchemeRegistry[0].id;
+    schemeSelect.value = state.selectedCalcScheme;
+    schemeSelect.addEventListener("change", function () {
+      state.selectedCalcScheme = schemeSelect.value;
+      markCalcResultDirty();
+      const schemeLabel = document.getElementById("qpcrSchemeLabel");
+      if (schemeLabel) schemeLabel.textContent = "当前定量方案：" + currentCalcSchemeLabel();
+      if (validateQpcrInputAndToggleRun(false)) setCalcStatus("已切换定量方案。", false);
+      else setCalcStatus("请填写有效的重复数 n 与 cDNA种类数 type。", true);
+    });
+    schemeCol.appendChild(schemeLabel);
+    schemeCol.appendChild(schemeSelect);
+    calcParamRow.appendChild(schemeCol);
+
+    const repeatCol = document.createElement("div");
+    repeatCol.className = "col-lg-3";
+    const repeatLabel = document.createElement("label");
+    repeatLabel.className = "form-label";
+    repeatLabel.setAttribute("for", "qpcrRepeatInput");
+    repeatLabel.textContent = "重复数 n";
+    const repeatInput = document.createElement("input");
+    repeatInput.id = "qpcrRepeatInput";
+    repeatInput.type = "number";
+    repeatInput.min = "1";
+    repeatInput.step = "1";
+    repeatInput.className = "form-control";
+    repeatInput.value = String(state.qpcrRepeatN || 1);
+    repeatInput.addEventListener("input", function () {
+      state.qpcrRepeatN = repeatInput.value;
+      markCalcResultDirty();
+      validateQpcrInputAndToggleRun(true);
+    });
+    repeatCol.appendChild(repeatLabel);
+    repeatCol.appendChild(repeatInput);
+    calcParamRow.appendChild(repeatCol);
+
+    const typeCol = document.createElement("div");
+    typeCol.className = "col-lg-4";
+    const typeLabel = document.createElement("label");
+    typeLabel.className = "form-label";
+    typeLabel.setAttribute("for", "qpcrTypeInput");
+    typeLabel.textContent = "cDNA种类数 type";
+    const typeInput = document.createElement("input");
+    typeInput.id = "qpcrTypeInput";
+    typeInput.type = "number";
+    typeInput.min = "1";
+    typeInput.step = "1";
+    typeInput.className = "form-control";
+    typeInput.value = String(state.qpcrCdnaTypeCount || 1);
+    typeInput.addEventListener("input", function () {
+      state.qpcrCdnaTypeCount = typeInput.value;
+      markCalcResultDirty();
+      validateQpcrInputAndToggleRun(true);
+    });
+    typeCol.appendChild(typeLabel);
+    typeCol.appendChild(typeInput);
+    calcParamRow.appendChild(typeCol);
+
+    const hintCol = document.createElement("div");
+    hintCol.className = "col-12";
+    hintCol.innerHTML =
+      '<div class="small text-muted">单个基因-引物对的期望孔数 = n × type。若板面实际引物孔数不一致，将警告但继续计算。</div>';
+    calcParamRow.appendChild(hintCol);
+
+    validateQpcrInputAndToggleRun(false);
+  }
+
+  function renderCalcSelect() {
+    if (!hasCalcWorkbench) return;
+    calcScriptSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "请选择计算项目";
+    calcScriptSelect.appendChild(placeholder);
+    calcRegistry.forEach((calcDef) => {
+      const option = document.createElement("option");
+      option.value = calcDef.id;
+      option.textContent = calcDef.label;
+      calcScriptSelect.appendChild(option);
+    });
+    calcScriptSelect.value = state.selectedCalcId;
+  }
+
+  function handleCalcChange() {
+    if (!hasCalcWorkbench) return;
+    state.selectedCalcId = calcScriptSelect.value;
+    renderCalcParamControls();
+    if (!state.selectedCalcId) {
+      clearCalcWorkbenchPanel();
+      renderCalcResultPlaceholder("请选择计算项目后展示内容。");
+      runCalcBtn.disabled = true;
+      setCalcStatus("请先选择计算项目。", false);
+      return;
+    }
+
+    if (state.selectedCalcId === "qpcr_quant") {
+      renderQpcrWorkbench();
+      renderCalcResultPlaceholder("qPCR板面已加载，点击“执行计算”生成体积结果。");
+      if (validateQpcrInputAndToggleRun(false)) {
+        setCalcStatus("已加载 qPCR 96孔板，可直接进行区域标注并执行计算。", false);
+      } else {
+        setCalcStatus("请填写有效的重复数 n 与 cDNA种类数 type。", true);
+      }
+      return;
+    }
+
+    runCalcBtn.disabled = false;
+    clearCalcWorkbenchPanel();
+    renderCalcResultPlaceholder("已选择计算项目。");
+    setCalcStatus("已选择计算项目。", false);
+  }
+
+  async function handleRunCalc() {
+    if (!hasCalcWorkbench) return;
+    const calcDef = currentCalcScript();
+    if (!calcDef) {
+      setCalcStatus("请先选择计算项目。", true);
+      return;
+    }
+
+    try {
+      if (state.selectedCalcId !== "qpcr_quant") {
+        setCalcStatus("该计算项暂未实现。", true);
+        return;
+      }
+
+      const scheme = currentCalcScheme();
+      if (!scheme) {
+        setCalcStatus("未找到可用定量方案。", true);
+        return;
+      }
+
+      const params = getQpcrParams();
+      if (!Number.isFinite(params.n) || !Number.isFinite(params.type)) {
+        runCalcBtn.disabled = true;
+        setCalcStatus("重复数 n 与 cDNA种类数 type 必须为正整数。", true);
+        return;
+      }
+
+      if (qpcrState.pairs.length === 0) {
+        setCalcStatus("请先添加至少一个基因-引物名称对。", true);
+        return;
+      }
+
+      const volumeRows = buildQpcrVolumeRows(scheme, params.n, params.type, qpcrState.pairs);
+      const cdnaData = buildCdnaRows(scheme, params.n, params.type);
+      volumeRows.forEach((row) => {
+        row.v = calcPairV(row.vt, cdnaData.cdnaVolPerType, params.type);
+      });
+
+      qpcrState.volumeByPairId = new Map(volumeRows.map((row) => [row.pairId, row.v]));
+      const actualMap = buildPairActualWellCountMap();
+      const expectedCount = expectedPairWellCount(params.n, params.type);
+      const warnings = buildWellCountWarnings(qpcrState.pairs, expectedCount, actualMap);
+      qpcrState.lastCalcWarnings = warnings;
+
+      renderCalcTablesAndWarnings(volumeRows, cdnaData.rows, warnings, params.n, params.type, scheme.label);
+      repaintQpcrBoard();
+      state.calcResultReady = true;
+      setCalcExportEnabled(true);
+
+      if (warnings.length > 0) setCalcStatus("计算完成，存在 " + warnings.length + " 条孔位警告。", false);
+      else setCalcStatus("计算完成。", false);
+    } catch (err) {
+      state.calcResultReady = false;
+      setCalcExportEnabled(false);
+      setCalcStatus("计算失败: " + (err && err.message ? err.message : String(err)), true);
+    }
+  }
+
+  async function handleExportCalcPng() {
+    if (!hasCalcWorkbench) return;
+    if (!state.calcResultReady) {
+      setCalcStatus("请先执行计算，再导出PNG。", true);
+      return;
+    }
+    if (typeof window.html2canvas !== "function") {
+      setCalcStatus("导出失败：未加载html2canvas。", true);
+      return;
+    }
+    const tableCount = calcResult.querySelectorAll("table").length;
+    if (tableCount < 2) {
+      setCalcStatus("导出失败：结果区表格不足，请先完成计算。", true);
+      return;
+    }
+
+    try {
+      setCalcExportEnabled(false);
+      setCalcStatus("正在生成PNG，请稍候…", false);
+      let boardCanvas = null;
+      const boardRoot = document.getElementById("qpcrBoardRoot");
+      if (boardRoot) {
+        boardCanvas = await window.html2canvas(boardRoot, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+      }
+      const resultCanvas = await window.html2canvas(calcResult, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false
+      });
+      const canvas = composeCalcExportCanvas(boardCanvas, resultCanvas);
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = buildCalcExportFilename();
+      link.click();
+      setCalcStatus("导出成功：PNG已下载。", false);
+    } catch (err) {
+      setCalcStatus("导出失败: " + (err && err.message ? err.message : String(err)), true);
+    } finally {
+      setCalcExportEnabled(state.calcResultReady);
+    }
   }
 
   workbookInput.addEventListener("change", handleWorkbookInputChange);
@@ -992,7 +2193,21 @@
 
   renderScriptSelect();
   renderParamControls();
-  loadScriptDoc(currentScript());
+  loadScriptDoc(null);
+  generatePlotBtn.disabled = true;
   setWorkbookStatus("尚未加载文件", false);
-  setPlotStatus("尚未生成图像", false);
+  setPlotStatus("请先选择绘图脚本。", false);
+
+  if (hasCalcWorkbench) {
+    calcScriptSelect.addEventListener("change", handleCalcChange);
+    runCalcBtn.addEventListener("click", handleRunCalc);
+    if (exportCalcBtn) exportCalcBtn.addEventListener("click", handleExportCalcPng);
+    renderCalcSelect();
+    renderCalcParamControls();
+    clearCalcWorkbenchPanel();
+    runCalcBtn.disabled = true;
+    setCalcExportEnabled(false);
+    renderCalcResultPlaceholder("请选择计算项目后展示内容。");
+    setCalcStatus("请先选择计算项目。", false);
+  }
 })();

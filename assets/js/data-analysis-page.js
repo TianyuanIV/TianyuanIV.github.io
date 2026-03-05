@@ -142,7 +142,7 @@
     hasPlot: false,
     selectedCalcId: "",
     selectedCalcScheme: "",
-    qpcrRepeatN: 1,
+    qpcrRepeatN: 3,
     qpcrCdnaTypeCount: 1,
     calcResultReady: false
   };
@@ -1246,6 +1246,97 @@
     return qpcrState.pairs.find((item) => item.id === qpcrState.selectedPairId) || null;
   }
 
+  function hasQpcrPair(geneName, primerName) {
+    const geneKey = normalizeIdentity(geneName);
+    const primerKey = normalizeIdentity(primerName);
+    return qpcrState.pairs.some((pair) =>
+      normalizeIdentity(pair.geneName) === geneKey &&
+      normalizeIdentity(pair.primerName) === primerKey
+    );
+  }
+
+  function appendQpcrPair(geneName, primerName) {
+    const sampleName = String(geneName || "").trim();
+    const primer = String(primerName || "").trim();
+    if (!sampleName || !primer) return null;
+    if (hasQpcrPair(sampleName, primer)) return null;
+
+    qpcrState.seq += 1;
+    const geneColor = getGeneColor(sampleName);
+    const primerColor = getPrimerColor(sampleName, primer);
+    const pair = {
+      id: "pair_" + qpcrState.seq,
+      geneName: sampleName,
+      primerName: primer,
+      geneColor: geneColor,
+      primerColor: primerColor
+    };
+    qpcrState.pairs.push(pair);
+    qpcrState.selectedPairId = pair.id;
+    return pair;
+  }
+
+  function parseQpcrPairsFromRows(rows) {
+    const out = [];
+    if (!rows || rows.length === 0) return out;
+    const trimmedRows = rows.map((row) => (row || []).map((cell) => String(cell ?? "").trim()));
+    const firstRow = trimmedRows[0] || [];
+    const firstToken = normalizeIdentity(firstRow[0] || "");
+    const maybeHeader = (firstToken.includes("样本") || firstToken.includes("sample")) &&
+      firstRow.slice(1).some((cell) => {
+        const token = normalizeIdentity(cell);
+        return token.includes("引物") || token.includes("primer");
+      });
+    const startRow = maybeHeader ? 1 : 0;
+
+    const seen = new Set();
+    for (let i = startRow; i < trimmedRows.length; i += 1) {
+      const row = trimmedRows[i] || [];
+      const sampleName = String(row[0] ?? "").trim();
+      if (!sampleName) continue;
+      for (let j = 1; j < row.length; j += 1) {
+        const primerName = String(row[j] ?? "").trim();
+        if (!primerName) continue;
+        const key = normalizeIdentity(sampleName) + "||" + normalizeIdentity(primerName);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ geneName: sampleName, primerName: primerName });
+      }
+    }
+    return out;
+  }
+
+  function parseQpcrPairsFromFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        reject(new Error("请选择一个 xlsx/xls 文件。"));
+        return;
+      }
+      if (typeof XLSX === "undefined" || !XLSX || !XLSX.read) {
+        reject(new Error("导入失败：未找到 XLSX 解析库。"));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = function () {
+        reject(new Error("读取文件失败。"));
+      };
+      reader.onload = function (evt) {
+        try {
+          const wb = XLSX.read(evt.target.result, { type: "array" });
+          const firstName = wb.SheetNames && wb.SheetNames[0];
+          if (!firstName) throw new Error("文件中没有可用 Sheet。");
+          const ws = wb.Sheets[firstName];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          const pairs = parseQpcrPairsFromRows(rows);
+          resolve(pairs);
+        } catch (err) {
+          reject(new Error("解析文件失败：" + (err && err.message ? err.message : String(err))));
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   function currentCalcSchemeLabel() {
     const scheme = calcSchemeRegistry.find((item) => item.id === state.selectedCalcScheme);
     return scheme ? scheme.label : "未选择定量方案";
@@ -1309,7 +1400,7 @@
   }
 
   function buildCdnaRows(scheme, n, type) {
-    const redundancy = 1.2;
+    const redundancy = 1.1;
     const cdnaVolPerType = scheme.cdnaPerWell * n * redundancy;
     const rows = [];
     for (let i = 1; i <= type; i += 1) rows.push({ typeName: "type" + i, cdnaVol: cdnaVolPerType });
@@ -1317,7 +1408,7 @@
   }
 
   function calcPairV(vt, cdnaVolPerType, type) {
-    return ((vt / type + cdnaVolPerType) / 3) * 1.1 / 1.2;
+    return (((vt / type) / 3) * 1.1 / 1.2) + (cdnaVolPerType / 3);
   }
 
   function buildPairActualWellCountMap() {
@@ -1395,7 +1486,7 @@
       '<h3 class="h6 mb-2">总体积表（单位：μL）</h3>' +
       '<div class="table-responsive mb-3">' +
       '<table class="table table-sm table-bordered align-middle mb-0">' +
-      "<thead><tr><th>基因</th><th>引物</th><th>孔数(n×type)</th><th>mix</th><th>水</th><th>引物</th><th>VT</th></tr></thead>" +
+      "<thead><tr><th>样本</th><th>引物</th><th>孔数(n×type)</th><th>mix</th><th>水</th><th>引物</th><th>VT</th></tr></thead>" +
       "<tbody>" + volumeBody + "</tbody>" +
       "</table>" +
       "</div>" +
@@ -1424,7 +1515,7 @@
     if (qpcrState.pairs.length === 0) {
       const option = document.createElement("option");
       option.value = "";
-      option.textContent = "请先添加基因/引物名称对";
+      option.textContent = "请先添加样本/引物名称对";
       pairSelect.appendChild(option);
       pairSelect.value = "";
       qpcrState.selectedPairId = "";
@@ -1770,11 +1861,13 @@
       '<div id="qpcrSchemeLabel" class="small text-muted mb-2">当前定量方案：' + escapeHtml(currentCalcSchemeLabel()) + "</div>" +
       '<div class="row g-3 align-items-end">' +
       '<div class="col-lg-4"><label for="qpcrPairSelect" class="form-label">名称对</label><select id="qpcrPairSelect" class="form-select"></select></div>' +
-      '<div class="col-lg-4"><label for="qpcrGeneInput" class="form-label">基因名称</label><input id="qpcrGeneInput" class="form-control" type="text" placeholder="例如: GAPDH" /></div>' +
+      '<div class="col-lg-4"><label for="qpcrGeneInput" class="form-label">样本名称</label><input id="qpcrGeneInput" class="form-control" type="text" placeholder="例如: sample_A" /></div>' +
       '<div class="col-lg-4"><label for="qpcrPrimerInput" class="form-label">引物名称</label><input id="qpcrPrimerInput" class="form-control" type="text" placeholder="例如: GAPDH-F/R" /></div>' +
+      '<div class="col-lg-8"><label for="qpcrPairFileInput" class="form-label">导入样本-引物文件</label><input id="qpcrPairFileInput" class="form-control" type="file" accept=".xlsx,.xls" /></div>' +
+      '<div class="col-lg-4 d-flex"><button id="qpcrImportPairsBtn" class="btn btn-outline-primary btn-sm w-100" type="button">从文件导入名称对</button></div>' +
       '<div class="col-12 d-flex flex-wrap gap-2">' +
       '<button id="qpcrAddPairBtn" class="btn btn-outline-primary btn-sm" type="button">添加名称对</button>' +
-      '<button id="qpcrApplyGeneBtn" class="btn btn-outline-primary btn-sm" type="button">基因边框应用到选区</button>' +
+      '<button id="qpcrApplyGeneBtn" class="btn btn-outline-primary btn-sm" type="button">样本边框应用到选区</button>' +
       '<button id="qpcrApplyPrimerBtn" class="btn btn-outline-primary btn-sm" type="button">引物填充应用到选区</button>' +
       '<button id="qpcrClearSelectionBtn" class="btn btn-outline-secondary btn-sm" type="button">清空当前选区</button>' +
       '<button id="qpcrResetMarksBtn" class="btn btn-outline-secondary btn-sm" type="button">清空全部标注</button>' +
@@ -1782,13 +1875,15 @@
       '<div class="col-12"><div id="qpcrPairLegend" class="qpcr-legend"></div></div>' +
       "</div>" +
       '<div class="qpcr-board-host mt-3"><div id="qpcrBoardRoot" class="qpcr-board-root"></div></div>' +
-      '<div class="small text-muted mt-2">提示：按住鼠标左键拖拽可框选矩形区域，先添加名称对，再应用“基因边框”或“引物填充”。</div>' +
+      '<div class="small text-muted mt-2">提示：按住鼠标左键拖拽可框选矩形区域，先添加名称对，再应用“样本边框”或“引物填充”。导入文件默认读取首个Sheet：每行第1列为样本，后续每列为该样本的引物。</div>' +
       "</div>";
 
     const pairSelect = document.getElementById("qpcrPairSelect");
     const geneInput = document.getElementById("qpcrGeneInput");
     const primerInput = document.getElementById("qpcrPrimerInput");
+    const pairFileInput = document.getElementById("qpcrPairFileInput");
     const addPairBtn = document.getElementById("qpcrAddPairBtn");
+    const importPairsBtn = document.getElementById("qpcrImportPairsBtn");
     const applyGeneBtn = document.getElementById("qpcrApplyGeneBtn");
     const applyPrimerBtn = document.getElementById("qpcrApplyPrimerBtn");
     const clearSelectionBtn = document.getElementById("qpcrClearSelectionBtn");
@@ -1806,22 +1901,14 @@
         const geneName = geneInput ? geneInput.value.trim() : "";
         const primerName = primerInput ? primerInput.value.trim() : "";
         if (!geneName || !primerName) {
-          setCalcStatus("请同时填写基因名称和引物名称。", true);
+          setCalcStatus("请同时填写样本名称和引物名称。", true);
           return;
         }
-
-        qpcrState.seq += 1;
-        const geneColor = getGeneColor(geneName);
-        const primerColor = getPrimerColor(geneName, primerName);
-        const pair = {
-          id: "pair_" + qpcrState.seq,
-          geneName: geneName,
-          primerName: primerName,
-          geneColor: geneColor,
-          primerColor: primerColor
-        };
-        qpcrState.pairs.push(pair);
-        qpcrState.selectedPairId = pair.id;
+        const pair = appendQpcrPair(geneName, primerName);
+        if (!pair) {
+          setCalcStatus("该样本-引物名称对已存在。", true);
+          return;
+        }
         renderQpcrPairSelect();
         renderQpcrLegend();
         repaintQpcrBoard();
@@ -1830,6 +1917,43 @@
         if (geneInput) geneInput.value = "";
         if (primerInput) primerInput.value = "";
         setCalcStatus("已添加名称对：" + pair.geneName + " / " + pair.primerName, false);
+      });
+    }
+
+    if (importPairsBtn) {
+      importPairsBtn.addEventListener("click", async function () {
+        try {
+          const file = pairFileInput && pairFileInput.files ? pairFileInput.files[0] : null;
+          if (!file) {
+            setCalcStatus("请先选择要导入的 xlsx/xls 文件。", true);
+            return;
+          }
+          const parsed = await parseQpcrPairsFromFile(file);
+          if (!parsed || parsed.length === 0) {
+            setCalcStatus("文件中未识别到有效的样本-引物名称对。", true);
+            return;
+          }
+
+          let added = 0;
+          let skipped = 0;
+          parsed.forEach((item) => {
+            const pair = appendQpcrPair(item.geneName, item.primerName);
+            if (pair) added += 1;
+            else skipped += 1;
+          });
+          if (added === 0) {
+            setCalcStatus("导入完成：未新增名称对（可能全部重复）。", true);
+            return;
+          }
+
+          renderQpcrPairSelect();
+          renderQpcrLegend();
+          repaintQpcrBoard();
+          markCalcResultDirty();
+          setCalcStatus("导入完成：新增 " + added + " 对，跳过 " + skipped + " 对。", false);
+        } catch (err) {
+          setCalcStatus(err && err.message ? err.message : "导入失败。", true);
+        }
       });
     }
 
@@ -1855,7 +1979,7 @@
         });
         clearQpcrSelection();
         markCalcResultDirty();
-        setCalcStatus("已应用基因边框：" + pair.geneName, false);
+        setCalcStatus("已应用样本边框：" + pair.geneName, false);
       });
     }
 
@@ -1980,7 +2104,7 @@
     repeatInput.min = "1";
     repeatInput.step = "1";
     repeatInput.className = "form-control";
-    repeatInput.value = String(state.qpcrRepeatN || 1);
+    repeatInput.value = String(state.qpcrRepeatN || 3);
     repeatInput.addEventListener("input", function () {
       state.qpcrRepeatN = repeatInput.value;
       markCalcResultDirty();
@@ -2015,7 +2139,7 @@
     const hintCol = document.createElement("div");
     hintCol.className = "col-12";
     hintCol.innerHTML =
-      '<div class="small text-muted">单个基因-引物对的期望孔数 = n × type。若板面实际引物孔数不一致，将警告但继续计算。</div>';
+      '<div class="small text-muted">单个样本-引物对的期望孔数 = n × type。若板面实际引物孔数不一致，将警告但继续计算。</div>';
     calcParamRow.appendChild(hintCol);
 
     validateQpcrInputAndToggleRun(false);
@@ -2051,7 +2175,7 @@
 
     if (state.selectedCalcId === "qpcr_quant") {
       renderQpcrWorkbench();
-      renderCalcResultPlaceholder("qPCR板面已加载，点击“执行计算”生成体积结果。");
+      renderCalcResultPlaceholder("qPCR板面已加载，点击“执行计算”生成结果。");
       if (validateQpcrInputAndToggleRun(false)) {
         setCalcStatus("已加载 qPCR 96孔板，可直接进行区域标注并执行计算。", false);
       } else {
@@ -2094,7 +2218,7 @@
       }
 
       if (qpcrState.pairs.length === 0) {
-        setCalcStatus("请先添加至少一个基因-引物名称对。", true);
+        setCalcStatus("请先添加至少一个样本-引物名称对。", true);
         return;
       }
 

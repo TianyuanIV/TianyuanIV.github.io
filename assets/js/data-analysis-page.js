@@ -1473,19 +1473,6 @@
     });
   }
 
-  function createSvgLine(svg, x1, y1, x2, y2, color) {
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("x1", String(x1));
-    line.setAttribute("y1", String(y1));
-    line.setAttribute("x2", String(x2));
-    line.setAttribute("y2", String(y2));
-    line.setAttribute("stroke", color);
-    line.setAttribute("stroke-width", "3");
-    line.setAttribute("stroke-linecap", "square");
-    line.setAttribute("vector-effect", "non-scaling-stroke");
-    svg.appendChild(line);
-  }
-
   function renderQpcrGeneOverlays() {
     const board = document.getElementById("qpcrBoard");
     const overlayHost = document.getElementById("qpcrGeneOverlay");
@@ -1494,11 +1481,29 @@
     if (qpcrState.geneAssignments.size === 0) return;
 
     const boardRect = board.getBoundingClientRect();
+    const strokeWidth = 3.4;
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", String(Math.max(1, Math.round(boardRect.width))));
     svg.setAttribute("height", String(Math.max(1, Math.round(boardRect.height))));
     svg.setAttribute("viewBox", "0 0 " + Math.max(1, boardRect.width) + " " + Math.max(1, boardRect.height));
     svg.classList.add("qpcr-gene-svg");
+    overlayHost.appendChild(svg);
+
+    const xGrid = [];
+    const yGrid = [];
+    for (let col = 1; col <= qpcrState.cols; col += 1) {
+      const node = qpcrState.wellNodes.get(wellKey(1, col)) || qpcrState.wellNodes.get(wellKey(qpcrState.rows, col));
+      if (!node) continue;
+      xGrid[col - 1] = node.offsetLeft;
+      xGrid[col] = node.offsetLeft + node.offsetWidth;
+    }
+    for (let row = 1; row <= qpcrState.rows; row += 1) {
+      const node = qpcrState.wellNodes.get(wellKey(row, 1)) || qpcrState.wellNodes.get(wellKey(row, qpcrState.cols));
+      if (!node) continue;
+      yGrid[row - 1] = node.offsetTop;
+      yGrid[row] = node.offsetTop + node.offsetHeight;
+    }
+    if (xGrid.length < qpcrState.cols + 1 || yGrid.length < qpcrState.rows + 1) return;
 
     const geneGroups = new Map();
     qpcrState.geneAssignments.forEach((assignment, key) => {
@@ -1510,118 +1515,99 @@
           cells: new Set()
         });
       }
-      geneGroups.get(geneKey).cells.add(key);
+      const group = geneGroups.get(geneKey);
+      group.cells.add(key);
     });
+
+    const vKey = function (x, y) { return x + "," + y; };
+    const hasCellFactory = function (cells) {
+      return function (row, col) {
+        if (row < 1 || row > qpcrState.rows || col < 1 || col > qpcrState.cols) return false;
+        return cells.has(wellKey(row, col));
+      };
+    };
 
     geneGroups.forEach((group) => {
-      const hasCell = function (row, col) {
-        if (row < 1 || row > qpcrState.rows || col < 1 || col > qpcrState.cols) return false;
-        return group.cells.has(wellKey(row, col));
+      const hasCell = hasCellFactory(group.cells);
+      const edges = [];
+      const edgesFromStart = new Map();
+      const pushEdge = function (sx, sy, ex, ey) {
+        const edge = { sx: sx, sy: sy, ex: ex, ey: ey, used: false };
+        edges.push(edge);
+        const key = vKey(sx, sy);
+        if (!edgesFromStart.has(key)) edgesFromStart.set(key, []);
+        edgesFromStart.get(key).push(edge);
       };
 
-      const addHorizontalRuns = function (checkOuter, yFromCell, xFromStartCell, xFromEndCell) {
-        for (let row = 1; row <= qpcrState.rows; row += 1) {
-          let col = 1;
-          while (col <= qpcrState.cols) {
-            if (!hasCell(row, col) || !checkOuter(row, col)) {
-              col += 1;
-              continue;
-            }
+      group.cells.forEach((cellKey) => {
+        const parts = cellKey.split(":");
+        const row = Number(parts[0]);
+        const col = Number(parts[1]);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
 
-            const startCol = col;
-            while (
-              col + 1 <= qpcrState.cols &&
-              hasCell(row, col + 1) &&
-              checkOuter(row, col + 1)
-            ) {
-              col += 1;
-            }
-            const endCol = col;
+        if (!hasCell(row - 1, col)) pushEdge(col - 1, row - 1, col, row - 1);
+        if (!hasCell(row, col + 1)) pushEdge(col, row - 1, col, row);
+        if (!hasCell(row + 1, col)) pushEdge(col, row, col - 1, row);
+        if (!hasCell(row, col - 1)) pushEdge(col - 1, row, col - 1, row - 1);
+      });
 
-            const startNode = qpcrState.wellNodes.get(wellKey(row, startCol));
-            const endNode = qpcrState.wellNodes.get(wellKey(row, endCol));
-            if (startNode && endNode) {
-              const startRect = startNode.getBoundingClientRect();
-              const endRect = endNode.getBoundingClientRect();
-              createSvgLine(
-                svg,
-                xFromStartCell(startRect, boardRect),
-                yFromCell(startRect, boardRect),
-                xFromEndCell(endRect, boardRect),
-                yFromCell(startRect, boardRect),
-                group.color
-              );
-            }
-            col += 1;
+      const loops = [];
+      edges.forEach((edge) => {
+        if (edge.used) return;
+        const loop = [];
+        let current = edge;
+        const startKey = vKey(current.sx, current.sy);
+        while (current && !current.used) {
+          current.used = true;
+          if (loop.length === 0) loop.push({ x: current.sx, y: current.sy });
+          loop.push({ x: current.ex, y: current.ey });
+          const nextKey = vKey(current.ex, current.ey);
+          if (nextKey === startKey) break;
+          const nextCandidates = edgesFromStart.get(nextKey) || [];
+          current = nextCandidates.find((item) => !item.used) || null;
+        }
+        if (loop.length > 2) loops.push(loop);
+      });
+
+      loops.forEach((loop, loopIndex) => {
+        const d = loop.map((pt, idx) => {
+          const x = xGrid[pt.x];
+          const y = yGrid[pt.y];
+          return (idx === 0 ? "M " : "L ") + x + " " + y;
+        }).join(" ") + " Z";
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", d);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", group.color);
+        path.setAttribute("stroke-width", String(strokeWidth));
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("vector-effect", "non-scaling-stroke");
+        svg.appendChild(path);
+
+        if (group.geneName && loopIndex === 0) {
+          let minX = Number.POSITIVE_INFINITY;
+          let minY = Number.POSITIVE_INFINITY;
+          loop.forEach((pt) => {
+            const x = xGrid[pt.x];
+            const y = yGrid[pt.y];
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+          });
+          if (Number.isFinite(minX) && Number.isFinite(minY)) {
+            const label = document.createElement("div");
+            label.className = "qpcr-gene-label";
+            label.textContent = group.geneName;
+            label.style.borderColor = toRgba(group.color, 0.6);
+            label.style.color = group.color;
+            label.style.left = Math.max(2, minX + 4) + "px";
+            label.style.top = Math.max(2, minY - 22) + "px";
+            overlayHost.appendChild(label);
           }
         }
-      };
-
-      const addVerticalRuns = function (checkOuter, xFromCell, yFromStartCell, yFromEndCell) {
-        for (let col = 1; col <= qpcrState.cols; col += 1) {
-          let row = 1;
-          while (row <= qpcrState.rows) {
-            if (!hasCell(row, col) || !checkOuter(row, col)) {
-              row += 1;
-              continue;
-            }
-
-            const startRow = row;
-            while (
-              row + 1 <= qpcrState.rows &&
-              hasCell(row + 1, col) &&
-              checkOuter(row + 1, col)
-            ) {
-              row += 1;
-            }
-            const endRow = row;
-
-            const startNode = qpcrState.wellNodes.get(wellKey(startRow, col));
-            const endNode = qpcrState.wellNodes.get(wellKey(endRow, col));
-            if (startNode && endNode) {
-              const startRect = startNode.getBoundingClientRect();
-              const endRect = endNode.getBoundingClientRect();
-              createSvgLine(
-                svg,
-                xFromCell(startRect, boardRect),
-                yFromStartCell(startRect, boardRect),
-                xFromCell(startRect, boardRect),
-                yFromEndCell(endRect, boardRect),
-                group.color
-              );
-            }
-            row += 1;
-          }
-        }
-      };
-
-      addHorizontalRuns(
-        function (r, c) { return !hasCell(r - 1, c); },
-        function (rect) { return rect.top - boardRect.top; },
-        function (rect) { return rect.left - boardRect.left; },
-        function (rect) { return rect.right - boardRect.left; }
-      );
-      addHorizontalRuns(
-        function (r, c) { return !hasCell(r + 1, c); },
-        function (rect) { return rect.bottom - boardRect.top; },
-        function (rect) { return rect.left - boardRect.left; },
-        function (rect) { return rect.right - boardRect.left; }
-      );
-      addVerticalRuns(
-        function (r, c) { return !hasCell(r, c - 1); },
-        function (rect) { return rect.left - boardRect.left; },
-        function (rect) { return rect.top - boardRect.top; },
-        function (rect) { return rect.bottom - boardRect.top; }
-      );
-      addVerticalRuns(
-        function (r, c) { return !hasCell(r, c + 1); },
-        function (rect) { return rect.right - boardRect.left; },
-        function (rect) { return rect.top - boardRect.top; },
-        function (rect) { return rect.bottom - boardRect.top; }
-      );
+      });
     });
 
-    overlayHost.appendChild(svg);
   }
 
   function repaintQpcrBoard() {

@@ -658,8 +658,9 @@ a:not(.btn):not(.nav-link):focus-visible {
 
 .qpcr-well {
   position: relative;
+  box-sizing: border-box;
   border: 1px solid #9ab6d8;
-  border-radius: 0.35rem;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.72);
   overflow: hidden;
   transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
@@ -675,7 +676,7 @@ a:not(.btn):not(.nav-link):focus-visible {
 }
 
 .qpcr-well-primer {
-  border-width: 1.5px;
+  border-width: 1px;
 }
 
 .qpcr-well-volume {
@@ -716,14 +717,16 @@ a:not(.btn):not(.nav-link):focus-visible {
 
 .qpcr-gene-label {
   position: absolute;
-  left: 0.3rem;
-  top: -1.05rem;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1;
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.86);
-  padding: 0 0.24rem;
-  border-radius: 0.18rem;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.24rem;
+  border: 1px solid #9ab6d8;
+  box-shadow: 0 1px 2px rgba(31, 47, 67, 0.18);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .qpcr-legend {
